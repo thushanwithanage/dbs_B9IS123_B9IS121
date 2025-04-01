@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Provision EC2 instance running Docker in a VPC'
+
+Resources:
+  
+  # Create a VPC
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+      Tags:
+        - Key: 'Name'
+          Value: 'DockerVPC'
+  
+  # Create a subnet
+  Subnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.1.0/24'
+      AvailabilityZone: 'us-east-1a'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: 'Name'
+          Value: 'DockerSubnet'
+  
+  # Create a Security Group
+  SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Allow SSH and HTTP access'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: 'tcp'
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+  
+  # Create an EC2 instance
+  EC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: 't2.micro'  # Change instance size as needed
+      ImageId: 'ami-0c55b159cbfafe1f0'  # Replace with the latest Amazon Linux 2 AMI ID
+      KeyName: 'Thushan_KeyPair'  # Replace with your SSH key name
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet
+      Tags:
+        - Key: 'Name'
+          Value: 'DockerServer'
+  
+  # Install Docker on the EC2 instance
+  EC2UserData:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo yum update -y
+          sudo yum install -y docker
+          sudo service docker start
+          sudo usermod -aG docker ec2-user
+          sudo docker pull nginx  # Example Docker container, replace with your desired image
+          sudo docker run -d -p 80:80 nginx  # Run the container
+
+Outputs:
+  EC2InstancePublicIP:
+    Description: 'Public IP of the EC2 instance'
+    Value: !GetAtt EC2Instance.PublicIp
