@@ -2,7 +2,7 @@ name: Deploy Infrastructure and Application
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -51,10 +51,15 @@ jobs:
             --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryURI'].OutputValue" \
             --output text)
+          EC2_INSTANCE_ID=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
+            --output text)
 
           echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV
           echo "EC2_DNS=$EC2_DNS" >> $GITHUB_ENV
           echo "ECR_URI=$ECR_URI" >> $GITHUB_ENV
+          echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID" >> $GITHUB_ENV
 
       # Verify ECR URI
       - name: Verify ECR URI
@@ -65,7 +70,7 @@ jobs:
         run: |
           # Verify the ECR URI value
           echo "ECR URI is: ${{ env.ECR_URI }}"
-          
+
           # Build the Docker image
           docker build -t ${{ env.ECR_URI }}:${{ github.sha }} .
 
@@ -80,7 +85,7 @@ jobs:
         run: |
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceIds,Values=$(aws ec2 describe-instances --query 'Reservations[0].Instances[0].InstanceId' --output text)" \
+            --targets "Key=instanceIds,Values=${{ env.EC2_INSTANCE_ID }}" \
             --parameters 'commands=["docker pull ${{ env.ECR_URI }}:${{ github.sha }}", "docker stop webapp || true", "docker rm webapp || true", "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"]' \
             --comment "Deploy webapp container to EC2"
 
