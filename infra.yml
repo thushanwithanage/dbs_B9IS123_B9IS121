@@ -107,7 +107,7 @@ Resources:
   WebServer:
     Type: "AWS::EC2::Instance"
     Properties:
-      ImageId: !Ref "AWS::SSM::Parameter::Value<aws:service:ami:amazon-linux-latest:amzn2-ami-hvm-x86_64-gp2>"
+      ImageId: !FindInMap [AWSRegionArch2AMI, !Ref "AWS::Region", !FindInMap [AWSInstanceType2Arch, "t2.micro", "Arch"]]
       InstanceType: "t2.micro"
       KeyName: !Ref KeyPairName
       IamInstanceProfile: !Ref EC2InstanceProfile
@@ -136,6 +136,18 @@ Resources:
       ImageTagMutability: "MUTABLE"
       ImageScanningConfiguration:
         ScanOnPush: true
+
+# Mappings for AMI IDs
+Mappings:
+  AWSInstanceType2Arch:
+    t2.micro:
+      Arch: HVM64
+  AWSRegionArch2AMI:
+    us-east-1:
+      HVM64: "ami-0c55b159cbfafe1f0"  # Amazon Linux 2 AMI (update for current)
+    us-west-2:
+      HVM64: "ami-0e5b6b6a9f3db6db8"
+    # Add other regions as needed
 
 Outputs:
   VPCID:
