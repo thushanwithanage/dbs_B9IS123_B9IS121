@@ -11,13 +11,9 @@ env:
   ECR_REPO_NAME: "webapp"
 
 jobs:
-  deploy-infrastructure:
-    name: Deploy CloudFormation Stack
+  deploy:
+    name: Deploy Infrastructure and Application
     runs-on: ubuntu-latest
-    outputs:
-      ECR_URI: ${{ steps.get-outputs.outputs.ECR_URI }}
-      EC2_IP: ${{ steps.get-outputs.outputs.EC2_IP }}
-      EC2_DNS: ${{ steps.get-outputs.outputs.EC2_DNS }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -29,6 +25,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Deploy CloudFormation Stack
       - name: Deploy infrastructure
         id: deploy-cfn
         run: |
@@ -38,6 +35,7 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides KeyPairName=${{ secrets.KEY_PAIR_NAME }}
 
+      # Get stack outputs (EC2 IP, DNS, ECR URI)
       - name: Get stack outputs
         id: get-outputs
         run: |
@@ -58,48 +56,36 @@ jobs:
           echo "EC2_DNS=$EC2_DNS" >> $GITHUB_ENV
           echo "ECR_URI=$ECR_URI" >> $GITHUB_ENV
 
-          # Set the outputs for the next job
-          echo "::set-output name=EC2_IP::$EC2_IP"
-          echo "::set-output name=EC2_DNS::$EC2_DNS"
-          echo "::set-output name=ECR_URI::$ECR_URI"
+      # Verify ECR URI
+      - name: Verify ECR URI
+        run: echo "ECR URI is: ${{ env.ECR_URI }}"
 
-  deploy-application:
-    needs: deploy-infrastructure
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
+      # Build and push Docker image to ECR
       - name: Build and push Docker image
         run: |
           # Verify the ECR URI value
-          echo "ECR URI is: ${{ needs.deploy-infrastructure.outputs.ECR_URI }}"
-
+          echo "ECR URI is: ${{ env.ECR_URI }}"
+          
           # Build the Docker image
-          docker build -t ${{ needs.deploy-infrastructure.outputs.ECR_URI }}:${{ github.sha }} .
+          docker build -t ${{ env.ECR_URI }}:${{ github.sha }} .
 
           # Login to AWS ECR
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ needs.deploy-infrastructure.outputs.ECR_URI }}
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
 
           # Push the Docker image
-          docker push ${{ needs.deploy-infrastructure.outputs.ECR_URI }}:${{ github.sha }}
+          docker push ${{ env.ECR_URI }}:${{ github.sha }}
 
+      # Deploy Docker container to EC2 via Systems Manager (SSM)
       - name: Deploy Docker container to EC2 via Systems Manager (SSM)
         run: |
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=instanceIds,Values=$(aws ec2 describe-instances --query 'Reservations[0].Instances[0].InstanceId' --output text)" \
-            --parameters 'commands=["docker pull ${{ needs.deploy-infrastructure.outputs.ECR_URI }}:${{ github.sha }}", "docker stop webapp || true", "docker rm webapp || true", "docker run -d -p 3000:3000 --name webapp ${{ needs.deploy-infrastructure.outputs.ECR_URI }}:${{ github.sha }}"]' \
+            --parameters 'commands=["docker pull ${{ env.ECR_URI }}:${{ github.sha }}", "docker stop webapp || true", "docker rm webapp || true", "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"]' \
             --comment "Deploy webapp container to EC2"
 
+      # Verify deployment
       - name: Verify deployment
         run: |
           curl --retry 5 --retry-delay 10 --max-time 5 \
-            http://${{ needs.deploy-infrastructure.outputs.EC2_IP }}:3000
+            http://${{ env.EC2_IP }}:3000
