@@ -54,7 +54,7 @@ jobs:
           echo "EC2_DNS=$EC2_DNS" >> $GITHUB_ENV
           echo "ECR_URI=$ECR_URI" >> $GITHUB_ENV
   
-        - name: Verify ECR URI
+      - name: Verify ECR URI
         run: echo "ECR URI is: ${{ env.ECR_URI }}"
 
   deploy-application:
