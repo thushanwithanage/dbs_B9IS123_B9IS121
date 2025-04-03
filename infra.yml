@@ -20,9 +20,10 @@ Resources:
 
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
-    Tags:
-      - Key: "Name"
-        Value: "WebApp-IGW"
+    Properties:
+      Tags:
+        - Key: "Name"
+          Value: "WebApp-IGW"
 
   GatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
@@ -73,7 +74,7 @@ Resources:
         - IpProtocol: "tcp"
           FromPort: 22
           ToPort: 22
-          CidrIp: "0.0.0.0/0"  # Restrict to your IP in production
+          CidrIp: "0.0.0.0/0"
         - IpProtocol: "tcp"
           FromPort: 3000
           ToPort: 3000
@@ -90,11 +91,12 @@ Resources:
         Version: "2012-10-17"
         Statement:
           - Effect: "Allow"
-            Principal: { Service: ["ec2.amazonaws.com"] }
+            Principal: 
+              Service: ["ec2.amazonaws.com"]
             Action: ["sts:AssumeRole"]
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"  # For debugging
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 
   EC2InstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
