@@ -49,11 +49,10 @@ jobs:
             --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryURI'].OutputValue" \
             --output text)
-          
+
           echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV
           echo "EC2_DNS=$EC2_DNS" >> $GITHUB_ENV
           echo "ECR_URI=$ECR_URI" >> $GITHUB_ENV
-          echo "EC2_SSH_HOST=ec2-user@$EC2_IP" >> $GITHUB_ENV
 
   deploy-application:
     needs: deploy-infrastructure
@@ -69,44 +68,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup SSH
-        run: |
-          # Decode and save the SSH key
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" | base64 -d > key.pem
-          chmod 600 key.pem
-          
-          # Wait for EC2 to be SSH-ready (up to 2 minutes)
-          echo "Waiting for EC2 SSH service..."
-          timeout 120 bash -c 'until nc -zv ${{ env.EC2_IP }} 22; do sleep 2; done'
-          
-          # Auto-trust host (first connection only)
-          mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ env.EC2_DNS }} >> ~/.ssh/known_hosts
-          ssh-keyscan -H ${{ env.EC2_IP }} >> ~/.ssh/known_hosts
-
       - name: Build and push Docker image
         run: |
           docker build -t ${{ env.ECR_URI }}:${{ github.sha }} .
-          aws ecr get-login-password | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
           docker push ${{ env.ECR_URI }}:${{ github.sha }}
 
-      - name: Deploy to EC2
+      - name: Deploy Docker container to EC2 via Systems Manager (SSM)
         run: |
-          ssh -i key.pem ${{ env.EC2_SSH_HOST }} << 'EOF'
-          # Pull the new image
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-            docker login --username AWS --password-stdin ${{ env.ECR_URI }}
-          
-          # Stop and remove old container
-          docker stop webapp || true
-          docker rm webapp || true
-          
-          # Run new container
-          docker run -d \
-            -p 3000:3000 \
-            --name webapp \
-            ${{ env.ECR_URI }}:${{ github.sha }}
-          EOF
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceIds,Values=$(aws ec2 describe-instances --query 'Reservations[0].Instances[0].InstanceId' --output text)" \
+            --parameters 'commands=["docker pull ${{ env.ECR_URI }}:${{ github.sha }}", "docker stop webapp || true", "docker rm webapp || true", "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"]' \
+            --comment "Deploy webapp container to EC2"
 
       - name: Verify deployment
         run: |

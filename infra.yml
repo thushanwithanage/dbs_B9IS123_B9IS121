@@ -42,7 +42,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.1.0/24"
-      AvailabilityZone: !Select [0, !GetAZs ""]
+      AvailabilityZone: !Select [0, !GetAZs ""] # Modify if required
       MapPublicIpOnLaunch: true
       Tags:
         - Key: "Name"
@@ -74,13 +74,9 @@ Resources:
   WebServerSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
-      GroupDescription: "Allow SSH and HTTP"
+      GroupDescription: "Allow HTTP (port 3000)"
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        - IpProtocol: "tcp"
-          FromPort: 22
-          ToPort: 22
-          CidrIp: "0.0.0.0/0"  # Restrict to your IP in production
         - IpProtocol: "tcp"
           FromPort: 3000
           ToPort: 3000
@@ -102,14 +98,14 @@ Resources:
             Action: ["sts:AssumeRole"]
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"  # Ensure EC2 instance can use SSM
 
   EC2InstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
     Properties:
       Roles: [!Ref EC2Role]
 
-  # 4. Compute
+  # 4. Compute (EC2 Instance)
   WebServer:
     Type: "AWS::EC2::Instance"
     Properties:
@@ -130,13 +126,13 @@ Resources:
           systemctl enable docker
           systemctl start docker
           usermod -aG docker ec2-user
-          # Generate host keys for SSH fingerprint
+          # Generate host keys for SSH fingerprint (if SSM is not used to connect)
           ssh-keygen -A > /dev/null 2>&1
       Tags:
         - Key: "Name"
           Value: "WebServer"
 
-  # 5. Container Registry
+  # 5. Container Registry (ECR)
   AppRepository:
     Type: "AWS::ECR::Repository"
     Properties:
