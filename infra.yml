@@ -6,6 +6,11 @@ Parameters:
     Type: "AWS::EC2::KeyPair::KeyName"
     Description: "20058324_key_pair"
 
+  # Dynamic AMI Parameter
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+
 Resources:
   # 1. Networking (VPC, Subnets, Internet Gateway)
   VPC:
@@ -103,11 +108,11 @@ Resources:
     Properties:
       Roles: [!Ref EC2Role]
 
-  # 4. EC2 Instance (Docker Ready)
+  # 4. EC2 Instance (Now using dynamic AMI)
   WebServer:
     Type: "AWS::EC2::Instance"
     Properties:
-      ImageId: !FindInMap [AWSRegionArch2AMI, !Ref "AWS::Region", !FindInMap [AWSInstanceType2Arch, "t2.micro", "Arch"]]
+      ImageId: !Ref LatestAmiId  # Uses SSM parameter to get latest AMI
       InstanceType: "t2.micro"
       KeyName: !Ref KeyPairName
       IamInstanceProfile: !Ref EC2InstanceProfile
@@ -136,18 +141,6 @@ Resources:
       ImageTagMutability: "MUTABLE"
       ImageScanningConfiguration:
         ScanOnPush: true
-
-# Mappings for AMI IDs
-Mappings:
-  AWSInstanceType2Arch:
-    t2.micro:
-      Arch: HVM64
-  AWSRegionArch2AMI:
-    us-east-1:
-      HVM64: "ami-0c55b159cbfafe1f0"  # Amazon Linux 2 AMI (update for current)
-    us-west-2:
-      HVM64: "ami-0e5b6b6a9f3db6db8"
-    # Add other regions as needed
 
 Outputs:
   VPCID:
