@@ -71,17 +71,21 @@ Resources:
       SubnetId: !Ref PublicSubnet
       RouteTableId: !Ref PublicRouteTable
 
-  # Security Group (Now only opens SSH for Ansible access)
+  # Security Group (Updated to open both SSH and web app ports)
   InstanceSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
-      GroupDescription: 'Enable SSH access for Ansible'
+      GroupDescription: 'Enable SSH access for Ansible and web app access'
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0  # Restrict this to your IP in production
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0   # Open for web application access
       Tags:
         - Key: Name
           Value: DockerHostSG

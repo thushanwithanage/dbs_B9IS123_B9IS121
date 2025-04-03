@@ -1,0 +1,54 @@
+---
+- name: Deploy Docker container
+  hosts: servers
+  become: yes
+  vars:
+    app_dir: /home/ec2-user/sample-webapp
+
+  tasks:
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: '0755'
+
+    - name: Copy application files
+      copy:
+        src: ./app/
+        dest: "{{ app_dir }}/app"
+        owner: ec2-user
+        group: ec2-user
+
+    - name: Copy Dockerfile
+      copy:
+        src: ./Dockerfile
+        dest: "{{ app_dir }}/Dockerfile"
+        owner: ec2-user
+        group: ec2-user
+
+    - name: Copy docker-compose.yml
+      copy:
+        src: ./docker-compose.yml
+        dest: "{{ app_dir }}/docker-compose.yml"
+        owner: ec2-user
+        group: ec2-user
+
+    - name: Install Docker Compose plugin
+      ansible.builtin.command: |
+        mkdir -p ~/.docker/cli-plugins/
+        curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
+        chmod +x ~/.docker/cli-plugins/docker-compose
+
+    - name: Build and run container with Docker Compose
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        build: true
+        restart: always
+        pull: false
+      register: compose_output
+
+    - name: Show container status
+      debug:
+        var: compose_output
