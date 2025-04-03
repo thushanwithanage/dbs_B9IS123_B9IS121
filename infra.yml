@@ -74,18 +74,22 @@ Resources:
   WebServerSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
-      GroupDescription: "Allow HTTP (port 3000)"
+      GroupDescription: "Allow HTTP (port 3000) and SSM"
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: "tcp"
           FromPort: 3000
           ToPort: 3000
-          CidrIp: "0.0.0.0/0"
+          CidrIp: "0.0.0.0/0"  # Allow HTTP traffic on port 3000
+        - IpProtocol: "tcp"
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"  # Allow SSH access, if needed (for troubleshooting)
       Tags:
         - Key: "Name"
           Value: "WebServer-SG"
 
-  # 3. IAM
+  # 3. IAM Role for EC2
   EC2Role:
     Type: "AWS::IAM::Role"
     Properties:
@@ -93,19 +97,20 @@ Resources:
         Version: "2012-10-17"
         Statement:
           - Effect: "Allow"
-            Principal: 
+            Principal:
               Service: ["ec2.amazonaws.com"]
             Action: ["sts:AssumeRole"]
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
         - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"  # Ensure EC2 instance can use SSM
+        - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"  # Ensure EC2 has necessary permissions (optional)
 
   EC2InstanceProfile:
     Type: "AWS::IAM::InstanceProfile"
     Properties:
       Roles: [!Ref EC2Role]
 
-  # 4. Compute (EC2 Instance)
+  # 4. EC2 Instance
   WebServer:
     Type: "AWS::EC2::Instance"
     Properties:
@@ -128,11 +133,14 @@ Resources:
           usermod -aG docker ec2-user
           # Generate host keys for SSH fingerprint (if SSM is not used to connect)
           ssh-keygen -A > /dev/null 2>&1
+          # Pull the Docker image from ECR and run the container
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ AWS::AccountId }}.dkr.ecr.${AWS::Region}.amazonaws.com/webapp
+          docker run -d -p 3000:3000 --name webapp ${{ AWS::AccountId }}.dkr.ecr.${AWS::Region}.amazonaws.com/webapp:latest
       Tags:
         - Key: "Name"
           Value: "WebServer"
 
-  # 5. Container Registry (ECR)
+  # 5. ECR Repository
   AppRepository:
     Type: "AWS::ECR::Repository"
     Properties:

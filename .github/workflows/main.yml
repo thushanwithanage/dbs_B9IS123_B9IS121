@@ -73,14 +73,14 @@ jobs:
             --parameters '{
               "commands": [
                 "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
+                "docker pull ${{ env.ECR_URI }}:${{ github.sha }}",
                 "docker stop webapp || true",
                 "docker rm webapp || true",
-                "docker pull ${{ env.ECR_URI }}:${{ github.sha }}",
                 "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"
               ]
             }' \
             --comment "Deploying webapp container"
-      
+
       - name: Verify deployment
         run: |
           curl --retry 5 --retry-delay 10 --max-time 5 \
