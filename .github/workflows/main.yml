@@ -70,8 +70,16 @@ jobs:
 
       - name: Build and push Docker image
         run: |
+          # Verify the ECR URI value
+          echo "ECR URI is: ${{ env.ECR_URI }}"
+          
+          # Build the Docker image
           docker build -t ${{ env.ECR_URI }}:${{ github.sha }} .
+          
+          # Login to AWS ECR
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
+          
+          # Push the Docker image
           docker push ${{ env.ECR_URI }}:${{ github.sha }}
 
       - name: Deploy Docker container to EC2 via Systems Manager (SSM)
