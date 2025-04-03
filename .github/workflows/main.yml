@@ -25,7 +25,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Deploy CloudFormation Stack
       - name: Deploy infrastructure
         id: deploy-cfn
         run: |
@@ -35,7 +34,6 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides KeyPairName=${{ secrets.KEY_PAIR_NAME }}
 
-      # Get stack outputs (EC2 IP, DNS, ECR URI)
       - name: Get stack outputs
         id: get-outputs
         run: |
@@ -61,35 +59,30 @@ jobs:
           echo "ECR_URI=$ECR_URI" >> $GITHUB_ENV
           echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID" >> $GITHUB_ENV
 
-      # Verify ECR URI
       - name: Verify ECR URI
         run: echo "ECR URI is: ${{ env.ECR_URI }}"
 
-      # Build and push Docker image to ECR
       - name: Build and push Docker image
         run: |
-          # Verify the ECR URI value
-          echo "ECR URI is: ${{ env.ECR_URI }}"
-
-          # Build the Docker image
           docker build -t ${{ env.ECR_URI }}:${{ github.sha }} .
-
-          # Login to AWS ECR
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
-
-          # Push the Docker image
           docker push ${{ env.ECR_URI }}:${{ github.sha }}
 
-      # Deploy Docker container to EC2 via Systems Manager (SSM)
-      - name: Deploy Docker container to EC2 via Systems Manager (SSM)
+      - name: Deploy to EC2 via SSM
         run: |
           aws ssm send-command \
+            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceIds,Values=${{ env.EC2_INSTANCE_ID }}" \
-            --parameters 'commands=["docker pull ${{ env.ECR_URI }}:${{ github.sha }}", "docker stop webapp || true", "docker rm webapp || true", "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"]' \
-            --comment "Deploy webapp container to EC2"
+            --parameters '{
+              "commands":[
+                "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
+                "docker stop webapp || true",
+                "docker rm webapp || true",
+                "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"
+              ]
+            }' \
+            --comment "Deploying webapp container"
 
-      # Verify deployment
       - name: Verify deployment
         run: |
           curl --retry 5 --retry-delay 10 --max-time 5 \
