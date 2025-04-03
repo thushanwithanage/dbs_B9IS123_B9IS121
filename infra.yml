@@ -1,18 +1,16 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Auto-scalable web server with secure networking (VPC, Subnets, ECR)"
+Description: "Auto-scalable web server with secure networking"
 
 Parameters:
   KeyPairName:
     Type: "AWS::EC2::KeyPair::KeyName"
     Description: "20058324_key_pair"
 
-  # Dynamic AMI Parameter
   LatestAmiId:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
 Resources:
-  # 1. Networking (VPC, Subnets, Internet Gateway)
   VPC:
     Type: "AWS::EC2::VPC"
     Properties:
@@ -30,12 +28,6 @@ Resources:
         - Key: "Name"
           Value: "WebApp-IGW"
 
-  GatewayAttachment:
-    Type: "AWS::EC2::VPCGatewayAttachment"
-    Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
-
   PublicSubnet:
     Type: "AWS::EC2::Subnet"
     Properties:
@@ -43,33 +35,7 @@ Resources:
       CidrBlock: "10.0.1.0/24"
       AvailabilityZone: !Select [0, !GetAZs ""]
       MapPublicIpOnLaunch: true
-      Tags:
-        - Key: "Name"
-          Value: "Public-Subnet"
 
-  RouteTable:
-    Type: "AWS::EC2::RouteTable"
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: "Name"
-          Value: "Public-RouteTable"
-
-  PublicRoute:
-    Type: "AWS::EC2::Route"
-    DependsOn: GatewayAttachment
-    Properties:
-      RouteTableId: !Ref RouteTable
-      DestinationCidrBlock: "0.0.0.0/0"
-      GatewayId: !Ref InternetGateway
-
-  SubnetRouteTableAssociation:
-    Type: "AWS::EC2::SubnetRouteTableAssociation"
-    Properties:
-      SubnetId: !Ref PublicSubnet
-      RouteTableId: !Ref RouteTable
-
-  # 2. Security Group (SSH + HTTP)
   WebServerSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
@@ -84,38 +50,13 @@ Resources:
           FromPort: 3000
           ToPort: 3000
           CidrIp: "0.0.0.0/0"
-      Tags:
-        - Key: "Name"
-          Value: "WebServer-SG"
 
-  # 3. IAM Role for EC2 (ECR Access)
-  EC2Role:
-    Type: "AWS::IAM::Role"
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Principal: 
-              Service: ["ec2.amazonaws.com"]
-            Action: ["sts:AssumeRole"]
-      ManagedPolicyArns:
-        - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-
-  EC2InstanceProfile:
-    Type: "AWS::IAM::InstanceProfile"
-    Properties:
-      Roles: [!Ref EC2Role]
-
-  # 4. EC2 Instance (Now using dynamic AMI)
   WebServer:
     Type: "AWS::EC2::Instance"
     Properties:
-      ImageId: !Ref LatestAmiId  # Uses SSM parameter to get latest AMI
+      ImageId: !Ref LatestAmiId
       InstanceType: "t2.micro"
       KeyName: !Ref KeyPairName
-      IamInstanceProfile: !Ref EC2InstanceProfile
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
@@ -129,29 +70,13 @@ Resources:
           systemctl enable docker
           systemctl start docker
           usermod -aG docker ec2-user
-      Tags:
-        - Key: "Name"
-          Value: "WebServer"
 
-  # 5. ECR Repository
   AppRepository:
     Type: "AWS::ECR::Repository"
     Properties:
       RepositoryName: "webapp"
-      ImageTagMutability: "MUTABLE"
-      ImageScanningConfiguration:
-        ScanOnPush: true
 
 Outputs:
-  VPCID:
-    Description: "VPC ID"
-    Value: !Ref VPC
-  PublicSubnetID:
-    Description: "Public Subnet ID"
-    Value: !Ref PublicSubnet
-  SecurityGroupID:
-    Description: "Web Server Security Group"
-    Value: !Ref WebServerSecurityGroup
   EC2PublicIP:
     Description: "Web Server Public IP"
     Value: !GetAtt WebServer.PublicIp
