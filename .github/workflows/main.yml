@@ -68,16 +68,19 @@ jobs:
       - name: Deploy to EC2 via SSM
         run: |
           aws ssm send-command \
-          --instance-ids ${{ env.EC2_INSTANCE_ID }} \
-          --document-name "AWS-RunShellScript" \
-          --parameters '{"commands": [
-            "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
-            "docker stop webapp || true",
-            "docker rm webapp || true",
-            "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"
-          ]}' \
-          --comment "Deploying webapp container"
-
+            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters '{
+              "commands": [
+                "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
+                "docker stop webapp || true",
+                "docker rm webapp || true",
+                "docker pull ${{ env.ECR_URI }}:${{ github.sha }}",
+                "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"
+              ]
+            }' \
+            --comment "Deploying webapp container"
+      
       - name: Verify deployment
         run: |
           curl --retry 5 --retry-delay 10 --max-time 5 \
