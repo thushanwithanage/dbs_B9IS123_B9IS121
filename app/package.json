@@ -1,12 +1,12 @@
 {
-    "name": "sample-webapp",
-    "version": "1.0.0",
-    "description": "Sample Node.js web app",
-    "main": "app.js",
-    "scripts": {
-      "start": "node app.js"
-    },
-    "dependencies": {
-      "express": "^4.17.1"
-    }
+  "name": "node-app",
+  "version": "1.0.0",
+  "description": "Simple Node.js app",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1"
   }
+}

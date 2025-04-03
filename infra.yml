@@ -1,16 +1,19 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Auto-scalable web server with secure networking"
+Description: "Auto-deployable web server with VPC, EC2, and ECR"
 
 Parameters:
   KeyPairName:
     Type: "AWS::EC2::KeyPair::KeyName"
-    Description: "20058324_key_pair"
+    Description: "Name of your EC2 key pair (e.g., 20058324_key_pair)"
+    Default: "20058324_key_pair"
 
   LatestAmiId:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Description: "Latest Amazon Linux 2 AMI"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
 Resources:
+  # 1. Networking
   VPC:
     Type: "AWS::EC2::VPC"
     Properties:
@@ -28,6 +31,12 @@ Resources:
         - Key: "Name"
           Value: "WebApp-IGW"
 
+  GatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
   PublicSubnet:
     Type: "AWS::EC2::Subnet"
     Properties:
@@ -35,28 +44,79 @@ Resources:
       CidrBlock: "10.0.1.0/24"
       AvailabilityZone: !Select [0, !GetAZs ""]
       MapPublicIpOnLaunch: true
+      Tags:
+        - Key: "Name"
+          Value: "Public-Subnet"
 
+  RouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: "Public-RouteTable"
+
+  PublicRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
+
+  # 2. Security
   WebServerSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
-      GroupDescription: "Allow SSH and HTTP traffic"
+      GroupDescription: "Allow SSH and HTTP"
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: "tcp"
           FromPort: 22
           ToPort: 22
-          CidrIp: "0.0.0.0/0"
+          CidrIp: "0.0.0.0/0"  # Restrict to your IP in production
         - IpProtocol: "tcp"
           FromPort: 3000
           ToPort: 3000
           CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: "Name"
+          Value: "WebServer-SG"
 
+  # 3. IAM
+  EC2Role:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal: 
+              Service: ["ec2.amazonaws.com"]
+            Action: ["sts:AssumeRole"]
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+
+  EC2InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles: [!Ref EC2Role]
+
+  # 4. Compute
   WebServer:
     Type: "AWS::EC2::Instance"
     Properties:
       ImageId: !Ref LatestAmiId
       InstanceType: "t2.micro"
       KeyName: !Ref KeyPairName
+      IamInstanceProfile: !Ref EC2InstanceProfile
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
@@ -70,16 +130,28 @@ Resources:
           systemctl enable docker
           systemctl start docker
           usermod -aG docker ec2-user
+          # Generate host keys for SSH fingerprint
+          ssh-keygen -A > /dev/null 2>&1
+      Tags:
+        - Key: "Name"
+          Value: "WebServer"
 
+  # 5. Container Registry
   AppRepository:
     Type: "AWS::ECR::Repository"
     Properties:
       RepositoryName: "webapp"
+      ImageTagMutability: "MUTABLE"
+      ImageScanningConfiguration:
+        ScanOnPush: true
 
 Outputs:
   EC2PublicIP:
     Description: "Web Server Public IP"
     Value: !GetAtt WebServer.PublicIp
+  EC2PublicDNS:
+    Description: "Web Server Public DNS"
+    Value: !GetAtt WebServer.PublicDnsName
   ECRRepositoryURI:
     Description: "ECR Repository URI"
     Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/webapp"

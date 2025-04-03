@@ -1,20 +1,13 @@
-# Use an official Node runtime as a parent image
-FROM node:14-alpine
+FROM node:14-slim
 
-# Set the working directory in the container
-WORKDIR /usr/src/app
+WORKDIR /app
 
-# Copy package files
-COPY app/package*.json ./
+COPY package*.json ./
 
-# Install dependencies
 RUN npm install
 
-# Bundle app source
-COPY app .
+COPY . .
 
-# Expose the port the app runs on
-EXPOSE 3000
+EXPOSE 5000
 
-# Define the command to run the app
-CMD ["npm", "start"]
+CMD [ "npm", "start" ]
