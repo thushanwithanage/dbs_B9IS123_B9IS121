@@ -1,0 +1,49 @@
+---
+- name: Install Docker on Amazon Linux 2
+  hosts: servers
+  become: yes
+  vars:
+    docker_user: "ec2-user"
+
+  tasks:
+    # First ensure we can use yum (Amazon Linux 2 definitely has yum)
+    - name: Install required system packages
+      raw: yum install -y yum-utils device-mapper-persistent-data lvm2
+      changed_when: false
+
+    # Explicitly use yum module with skip_broken option
+    - name: Install Docker using direct yum command
+      yum:
+        name: docker
+        state: present
+        disable_gpg_check: yes
+        skip_broken: yes
+      ignore_errors: yes
+
+    # Alternative approach if yum module fails
+    - name: Install Docker using raw yum command (fallback)
+      raw: yum install -y docker || amazon-linux-extras install -y docker
+      register: docker_install
+      changed_when: "'already installed' not in docker_install.stdout"
+      when: ansible_distribution == 'Amazon'
+
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ec2-user to docker group
+      user:
+        name: "{{ docker_user }}"
+        groups: docker
+        append: yes
+
+    - name: Verify Docker installation
+      command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Display Docker version
+      debug:
+        msg: "Docker version: {{ docker_version.stdout }}"
