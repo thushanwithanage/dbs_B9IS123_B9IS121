@@ -42,7 +42,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.1.0/24"
-      AvailabilityZone: !Select [0, !GetAZs ""]
+      AvailabilityZone: !Select [0, !GetAZs ""]  # Modify if required
       MapPublicIpOnLaunch: true
       Tags:
         - Key: "Name"
@@ -80,11 +80,11 @@ Resources:
         - IpProtocol: "tcp"
           FromPort: 3000
           ToPort: 3000
-          CidrIp: "0.0.0.0/0"
+          CidrIp: "0.0.0.0/0"  # Allow HTTP traffic on port 3000
         - IpProtocol: "tcp"
           FromPort: 22
           ToPort: 22
-          CidrIp: "0.0.0.0/0"
+          CidrIp: "0.0.0.0/0"  # Allow SSH access, if needed (for troubleshooting)
       Tags:
         - Key: "Name"
           Value: "WebServer-SG"
