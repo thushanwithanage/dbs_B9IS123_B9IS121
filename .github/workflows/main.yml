@@ -28,19 +28,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Step 6: Create CloudFormation Stack
-      - name: Create CloudFormation Stack
-        run: |
-          aws cloudformation create-stack --stack-name ${{ env.STACK_NAME }} \
-            --template-body file://${{ env.TEMPLATE_FILE }} \
-            --capabilities CAPABILITY_IAM \
-            --region ${{ env.AWS_REGION }}
-
-      # Step 7: Wait for CloudFormation Stack to Complete
-      - name: Wait for CloudFormation Stack to Complete
-        run: |
-          aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }}
-
       # Step 3: Ensure ECR Repository Exists
       - name: Ensure ECR Repository Exists
         run: |
@@ -59,7 +46,18 @@ jobs:
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-      
+      # Step 6: Create CloudFormation Stack
+      - name: Create CloudFormation Stack
+        run: |
+          aws cloudformation create-stack --stack-name ${{ env.STACK_NAME }} \
+            --template-body file://${{ env.TEMPLATE_FILE }} \
+            --capabilities CAPABILITY_IAM \
+            --region ${{ env.AWS_REGION }}
+
+      # Step 7: Wait for CloudFormation Stack to Complete
+      - name: Wait for CloudFormation Stack to Complete
+        run: |
+          aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }}
 
       # Step 8: Configure kubectl to interact with the EKS cluster
       - name: Configure kubectl
