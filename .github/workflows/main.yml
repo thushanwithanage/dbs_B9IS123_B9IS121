@@ -1,4 +1,4 @@
-name: Deploy Python Flask App to EC2
+name: Deploy Python FastAPI App to Kubernetes
 
 on:
   push:
@@ -24,18 +24,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy infrastructure using CloudFormation
-        run: |
-          aws cloudformation deploy \
-            --template-file infra.yml \
-            --stack-name WebappStack \
-            --capabilities CAPABILITY_NAMED_IAM
-          echo "Infrastructure deployed successfully."
-          echo "EC2 instance and ECR repository created."
-          echo "EC2 instance ID: $(aws cloudformation describe-stacks --stack-name WebappStack --query 'Stacks[0].Outputs[?OutputKey==`EC2InstanceId`].OutputValue' --output text)"
-          echo "ECR repository URI: $(aws cloudformation describe-stacks --stack-name WebappStack --query 'Stacks[0].Outputs[?OutputKey==`ECRRepositoryURI`].OutputValue' --output text)"
-          echo "Public IP: $(aws cloudformation describe-stacks --stack-name WebappStack --query 'Stacks[0].Outputs[?OutputKey==`EC2PublicIP`].OutputValue' --output text)"
-          echo "Deployment complete."
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -46,33 +34,16 @@ jobs:
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-      - name: Deploy to EC2 via SSM
+      - name: Configure kubectl
         run: |
-          # Get EC2 instance ID from CloudFormation stack
-          INSTANCE_ID=$(aws cloudformation describe-stacks \
-            --stack-name WebappStack \
-            --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
-            --output text)
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name Cluster
 
-          # Send deployment commands
-          aws ssm send-command \
-            --instance-ids $INSTANCE_ID \
-            --document-name "AWS-RunShellScript" \
-            --parameters '{
-              "commands": [
-                "docker stop ${{ env.CONTAINER_NAME }} || true",
-                "docker rm ${{ env.CONTAINER_NAME }} || true",
-                "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com",
-                "docker pull --no-cache ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest",
-                "docker run -d -p 3000:3000 --restart always --name ${{ env.CONTAINER_NAME }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest"
-              ]
-            }' \
-            --comment "Deploying Python FastAPI app"
-
-      - name: Verify deployment
+      - name: Apply Kubernetes Deployment
         run: |
-          EC2_IP=$(aws cloudformation describe-stacks \
-            --stack-name WebappStack \
-            --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
-            --output text)
-          echo "App deployed to: http://$EC2_IP:3000"
+          kubectl apply -f deployment.yml
+
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deployment/${{ env.CONTAINER_NAME }}
+          kubectl get pods
+          kubectl get services
