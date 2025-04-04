@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Python Flask app on EC2 with VPC, ECR, EKS Cluster, and Auto-deployment"
+Description: "Python Flask app on EC2 with VPC, ECR, and Auto-deployment"
 
 Parameters:
   KeyPairName:
@@ -11,11 +11,6 @@ Parameters:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
     Description: "Latest Amazon Linux 2 AMI"
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
-
-  EKSNodeInstanceType:
-    Type: "String"
-    Description: "EC2 instance type for EKS worker nodes"
-    Default: "t3.medium"
 
 Resources:
   # ========================
@@ -60,7 +55,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.2.0/24"
-      AvailabilityZone: !Select [1, !GetAZs ""]
+      AvailabilityZone: !Select [1, !GetAZs ""] 
       MapPublicIpOnLaunch: false
       Tags:
         - Key: "Name"
@@ -139,94 +134,40 @@ Resources:
         scanOnPush: true
 
   # ========================
-  # 5. EKS Cluster
+  # 5. EC2 Instance (Auto-Deploys Python App)
   # ========================
-  EKSCluster:
-    Type: "AWS::EKS::Cluster"
+  EC2Instance:
+    Type: "AWS::EC2::Instance"
     Properties:
-      Name: "python-app-cluster"
-      RoleArn: !GetAtt EKSRole.Arn
-      ResourcesVpcConfig:
-        SubnetIds:
-          - !Ref PublicSubnet
-          - !Ref PrivateSubnet
-        SecurityGroupIds:
-          - !Ref WebServerSecurityGroup
-
-  EKSRole:
-    Type: "AWS::IAM::Role"
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Principal:
-              Service: ["eks.amazonaws.com"]
-            Action: "sts:AssumeRole"
-      Policies:
-        - PolicyName: "EKSClusterPolicy"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "ec2:DescribeInstances"
-                  - "ec2:DescribeSecurityGroups"
-                  - "ec2:DescribeSubnets"
-                  - "ec2:DescribeVpcs"
-                  - "ec2:DescribeRouteTables"
-                  - "ec2:DescribeInternetGateways"
-                Resource: "*"
-
-  EKSNodeRole:
-    Type: "AWS::IAM::Role"
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Principal:
-              Service: ["ec2.amazonaws.com"]
-            Action: "sts:AssumeRole"
-      Policies:
-        - PolicyName: "EKSNodePolicy"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "eks:DescribeCluster"
-                Resource: "*"
-
-  # ========================
-  # 6. EKS Node Group
-  # ========================
-  EKSNodeGroup:
-    Type: "AWS::EKS::Nodegroup"
-    Properties:
-      ClusterName: !Ref EKSCluster
-      NodeRole: !GetAtt EKSNodeRole.Arn
-      Subnets:
-        - !Ref PublicSubnet
-        - !Ref PrivateSubnet
-      InstanceTypes:
-        - !Ref EKSNodeInstanceType
-      ScalingConfig:
-        MinSize: 1
-        MaxSize: 3
-        DesiredSize: 2
-      RemoteAccess:
-        Ec2SshKey: !Ref KeyPairName
+      InstanceType: "t2.micro"
+      KeyName: !Ref KeyPairName
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !GetAtt WebServerSecurityGroup.GroupId
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SubnetId: !Ref PublicSubnet
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Install Docker
+          yum update -y
+          amazon-linux-extras install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          
+          # Login to ECR and run the app
+          aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+          docker pull ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/python-webapp:latest
+          docker run -d -p 3000:3000 --restart always --name python-app ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/python-webapp:latest
+      Tags:
+        - Key: "Name"
+          Value: "PythonApp-Instance"
 
 Outputs:
+  EC2PublicIP:
+    Value: !GetAtt EC2Instance.PublicIp
+    Description: "Public IP to access the Python app"
+
   ECRRepositoryURI:
     Value: !GetAtt ECRRepository.RepositoryUri
     Description: "ECR URI to push Docker images"
-
-  EKSClusterName:
-    Value: !Ref EKSCluster
-    Description: "EKS Cluster Name"
-
-  EKSClusterEndpoint:
-    Value: !GetAtt EKSCluster.Endpoint
-    Description: "EKS Cluster Endpoint"
