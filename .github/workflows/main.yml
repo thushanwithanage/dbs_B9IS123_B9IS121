@@ -24,6 +24,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Deploy infrastructure using CloudFormation
+        run: |
+          aws cloudformation deploy \
+            --template-file infra.yml \
+            --stack-name WebappStack \
+            --capabilities CAPABILITY_NAMED_IAM
+          echo "Infrastructure deployed successfully."
+          echo "EC2 instance and ECR repository created."
+          echo "EC2 instance ID: $(aws cloudformation describe-stacks --stack-name your-stack-name --query 'Stacks[0].Outputs[?OutputKey==`EC2InstanceId`].OutputValue' --output text)"
+          echo "ECR repository URI: $(aws cloudformation describe-stacks --stack-name your-stack-name --query 'Stacks[0].Outputs[?OutputKey==`ECRRepositoryURI`].OutputValue' --output text)"
+          echo "Public IP: $(aws cloudformation describe-stacks --stack-name your-stack-name --query 'Stacks[0].Outputs[?OutputKey==`EC2PublicIP`].OutputValue' --output text)"
+          echo "Deployment complete."
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
