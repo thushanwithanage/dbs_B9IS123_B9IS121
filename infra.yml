@@ -4,7 +4,7 @@ Description: "Auto-deployable web server with VPC, EC2, and ECR"
 Parameters:
   KeyPairName:
     Type: "AWS::EC2::KeyPair::KeyName"
-    Description: "20058324_key_pair"
+    Description: "Name of your EC2 key pair (e.g., 20058324_key_pair)"
     Default: "20058324_key_pair"
 
   LatestAmiId:
@@ -99,4 +99,44 @@ Resources:
           - Effect: "Allow"
             Principal:
               Service: ["ec2.amazonaws.com"]
-            Action
+            Action: "sts:AssumeRole"  # Ensure there's a ':' after Action here
+
+  # 4. EC2 Instance
+  EC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.micro"
+      KeyName: !Ref KeyPairName
+      ImageId: !Ref LatestAmiId
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: "Name"
+          Value: "WebApp-Instance"
+
+  # 5. ECR Repository
+  ECRRepository:
+    Type: "AWS::ECR::Repository"
+    Properties:
+      RepositoryName: "webapp"
+      ImageScanningConfiguration:
+        scanOnPush: true
+
+Outputs:
+  EC2PublicIP:
+    Value: !GetAtt EC2Instance.PublicIp
+    Description: "Public IP of the EC2 instance"
+
+  EC2PublicDNS:
+    Value: !GetAtt EC2Instance.PublicDnsName
+    Description: "Public DNS of the EC2 instance"
+
+  ECRRepositoryURI:
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Description: "URI of the ECR repository"
+
+  EC2InstanceId:
+    Value: !Ref EC2Instance
+    Description: "ID of the EC2 instance"
