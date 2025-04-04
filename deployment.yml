@@ -2,8 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: python-app
-  labels:
-    app: python-app
 spec:
   replicas: 2
   selector:
@@ -16,21 +14,9 @@ spec:
     spec:
       containers:
       - name: python-app
-        image: 903957512790.dkr.ecr.us-east-1.amazonaws.com/python-webapp:latest
+        image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/python-webapp:latest
         ports:
         - containerPort: 3000
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
@@ -41,6 +27,6 @@ spec:
     app: python-app
   ports:
     - protocol: TCP
-      port: 3000
+      port: 80
       targetPort: 3000
   type: LoadBalancer

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Python Flask app on EC2 with VPC, ECR, and auto-deployment"
+Description: "Python Flask app on EC2 with VPC, ECR, EKS, and auto-deployment"
 
 Parameters:
   KeyPairName:
@@ -44,7 +44,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.1.0/24"
-      AvailabilityZone: !Select [0, !GetAZs ""]
+      AvailabilityZone: !Select [0, !GetAZs ""]  # Availability Zone 0
       MapPublicIpOnLaunch: true
       Tags:
         - Key: "Name"
@@ -174,6 +174,99 @@ Resources:
       ImageScanningConfiguration:
         scanOnPush: true
 
+  # ========================
+  # 6. EKS Cluster and Node Group
+  # ========================
+  EKSClusterRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: ["eks.amazonaws.com"]
+            Action: "sts:AssumeRole"
+
+  EKSClusterRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "EKSClusterPolicy"
+      Roles:
+        - !Ref EKSClusterRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ec2:DescribeInstances"
+              - "ec2:DescribeSecurityGroups"
+              - "ec2:DescribeSubnets"
+              - "ec2:DescribeVpcs"
+              - "ec2:DescribeRouteTables"
+              - "iam:ListRoles"
+              - "iam:GetRole"
+              - "logs:*"
+              - "eks:CreateCluster"
+              - "eks:DescribeCluster"
+              - "eks:ListClusters"
+            Resource: "*"
+
+  EKSCluster:
+    Type: "AWS::EKS::Cluster"
+    Properties:
+      Name: "PythonApp-EKS-Cluster"
+      RoleArn: !GetAtt EKSClusterRole.Arn
+      ResourcesVpcConfig:
+        SubnetIds:
+          - !Ref PublicSubnet
+        SecurityGroupIds:
+          - !Ref WebServerSecurityGroup
+      Version: "1.21"
+
+  EKSNodeGroupRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: ["ec2.amazonaws.com"]
+            Action: "sts:AssumeRole"
+
+  EKSNodeGroupPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "EKSNodeGroupPolicy"
+      Roles:
+        - !Ref EKSNodeGroupRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ec2:DescribeInstances"
+              - "eks:DescribeCluster"
+              - "logs:*"
+              - "ecr:GetAuthorizationToken"
+              - "ecr:BatchGetImage"
+            Resource: "*"
+
+  EKSNodeGroup:
+    Type: "AWS::EKS::Nodegroup"
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodeRole: !GetAtt EKSNodeGroupRole.Arn
+      Subnets:
+        - !Ref PublicSubnet
+      InstanceTypes:
+        - "t2.micro"
+      DesiredSize: 2
+      MinSize: 1
+      MaxSize: 3
+      NodegroupName: "PythonApp-EKS-NodeGroup"
+
 Outputs:
   EC2PublicIP:
     Value: !GetAtt EC2Instance.PublicIp
@@ -182,3 +275,7 @@ Outputs:
   ECRRepositoryURI:
     Value: !GetAtt ECRRepository.RepositoryUri
     Description: "ECR URI to push Docker images"
+
+  EKSClusterEndpoint:
+    Value: !GetAtt EKSCluster.Endpoint
+    Description: ""

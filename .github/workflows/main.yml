@@ -8,6 +8,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: python-webapp
   CONTAINER_NAME: python-app
+  EKS_CLUSTER_NAME: PythonApp-EKS-Cluster  # Update this to your actual EKS cluster name
 
 jobs:
   deploy:
@@ -39,15 +40,20 @@ jobs:
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-      - name: Configure kubectl
+      - name: Configure kubectl to access EKS cluster
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name <your-cluster-name>
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Verify kubectl access to EKS cluster
+        run: |
+          kubectl get svc
+          kubectl get nodes
 
       - name: Apply Kubernetes Deployment
         run: |
           kubectl apply -f deployment.yml
 
-      - name: Verify Deployment
+      - name: Verify Deployment Status
         run: |
           kubectl rollout status deployment/${{ env.CONTAINER_NAME }}
           kubectl get pods
