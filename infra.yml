@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Auto-deployable web server with VPC, EC2, and ECR"
+Description: "Python Flask app on EC2 with VPC, ECR, and auto-deployment"
 
 Parameters:
   KeyPairName:
     Type: "AWS::EC2::KeyPair::KeyName"
-    Description: "Name of your EC2 key pair (e.g., 20058324_key_pair)"
+    Description: "EC2 Key Pair"
     Default: "20058324_key_pair"
 
   LatestAmiId:
@@ -13,7 +13,9 @@ Parameters:
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
 Resources:
-  # 1. Networking
+  # ========================
+  # 1. Networking (VPC, Subnet, etc.)
+  # ========================
   VPC:
     Type: "AWS::EC2::VPC"
     Properties:
@@ -22,14 +24,14 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: "Name"
-          Value: "WebApp-VPC"
+          Value: "PythonApp-VPC"
 
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
     Properties:
       Tags:
         - Key: "Name"
-          Value: "WebApp-IGW"
+          Value: "PythonApp-IGW"
 
   GatewayAttachment:
     Type: "AWS::EC2::VPCGatewayAttachment"
@@ -42,11 +44,11 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.1.0/24"
-      AvailabilityZone: !Select [0, !GetAZs ""]  # Modify if required
+      AvailabilityZone: !Select [0, !GetAZs ""]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: "Name"
-          Value: "Public-Subnet"
+          Value: "PythonApp-Public-Subnet"
 
   RouteTable:
     Type: "AWS::EC2::RouteTable"
@@ -54,7 +56,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: "Name"
-          Value: "Public-RouteTable"
+          Value: "PythonApp-RouteTable"
 
   PublicRoute:
     Type: "AWS::EC2::Route"
@@ -70,26 +72,30 @@ Resources:
       SubnetId: !Ref PublicSubnet
       RouteTableId: !Ref RouteTable
 
-  # 2. Security
+  # ========================
+  # 2. Security Group (Allow HTTP 3000 + SSH)
+  # ========================
   WebServerSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
-      GroupDescription: "Allow HTTP (port 3000) and SSM"
+      GroupDescription: "Allow HTTP 3000 and SSH"
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: "tcp"
           FromPort: 3000
           ToPort: 3000
-          CidrIp: "0.0.0.0/0"  # Allow HTTP traffic on port 3000
+          CidrIp: "0.0.0.0/0"
         - IpProtocol: "tcp"
           FromPort: 22
           ToPort: 22
-          CidrIp: "0.0.0.0/0"  # Allow SSH access, if needed (for troubleshooting)
+          CidrIp: "0.0.0.0/0"
       Tags:
         - Key: "Name"
-          Value: "WebServer-SG"
+          Value: "PythonApp-SG"
 
-  # 3. IAM Resources
+  # ========================
+  # 3. IAM Role for EC2 (ECR + SSM Access)
+  # ========================
   EC2Role:
     Type: "AWS::IAM::Role"
     Properties:
@@ -104,7 +110,7 @@ Resources:
   EC2RolePolicy:
     Type: "AWS::IAM::Policy"
     Properties:
-      PolicyName: "WebAppEC2Policy"
+      PolicyName: "PythonAppEC2Policy"
       Roles:
         - !Ref EC2Role
       PolicyDocument:
@@ -116,8 +122,6 @@ Resources:
               - "ecr:BatchCheckLayerAvailability"
               - "ecr:GetDownloadUrlForLayer"
               - "ecr:BatchGetImage"
-              - "ssm:GetParameters"
-              - "ssm:GetParameter"
               - "logs:CreateLogGroup"
               - "logs:CreateLogStream"
               - "logs:PutLogEvents"
@@ -129,7 +133,9 @@ Resources:
       Roles:
         - !Ref EC2Role
 
-  # 4. EC2 Instance
+  # ========================
+  # 4. EC2 Instance (Auto-Deploys Python App)
+  # ========================
   EC2Instance:
     Type: "AWS::EC2::Instance"
     Properties:
@@ -140,31 +146,39 @@ Resources:
         - !GetAtt WebServerSecurityGroup.GroupId
       IamInstanceProfile: !Ref EC2InstanceProfile
       SubnetId: !Ref PublicSubnet
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Install Docker
+          yum update -y
+          amazon-linux-extras install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          
+          # Login to ECR and run the app
+          aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+          docker pull ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/python-webapp:latest
+          docker run -d -p 3000:3000 --restart always --name python-app ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/python-webapp:latest
       Tags:
         - Key: "Name"
-          Value: "WebApp-Instance"
+          Value: "PythonApp-Instance"
 
-  # 5. ECR Repository
+  # ========================
+  # 5. ECR Repository (Store Docker Images)
+  # ========================
   ECRRepository:
     Type: "AWS::ECR::Repository"
     Properties:
-      RepositoryName: "webapp"
+      RepositoryName: "python-webapp"
+      ImageTagMutability: "MUTABLE"
       ImageScanningConfiguration:
         scanOnPush: true
 
 Outputs:
   EC2PublicIP:
     Value: !GetAtt EC2Instance.PublicIp
-    Description: "Public IP of the EC2 instance"
-
-  EC2PublicDNS:
-    Value: !GetAtt EC2Instance.PublicDnsName
-    Description: "Public DNS of the EC2 instance"
+    Description: "Public IP to access the Python app"
 
   ECRRepositoryURI:
     Value: !GetAtt ECRRepository.RepositoryUri
-    Description: "URI of the ECR repository"
-
-  EC2InstanceId:
-    Value: !Ref EC2Instance
-    Description: "ID of the EC2 instance"
+    Description: "ECR URI to push Docker images"

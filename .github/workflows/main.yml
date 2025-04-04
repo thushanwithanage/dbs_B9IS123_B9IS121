@@ -1,88 +1,68 @@
-name: Deploy Infrastructure and Application
+name: Deploy Python Flask App to EC2
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches: [ main ]
 
 env:
-  AWS_REGION: "us-east-1"
-  STACK_NAME: "webapp-infra"
-  ECR_REPO_NAME: "webapp"
-  DOCKER_IMAGE_NAME: "webapp"
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: python-webapp
+  CONTAINER_NAME: python-app
 
 jobs:
   deploy:
-    name: Deploy Infrastructure and Application
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required for AWS OIDC auth
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE }}  # ARN of the EC2Role from CloudFormation outputs
+          role-session-name: GitHubActions-Deploy
 
-      - name: Deploy infrastructure
-        id: deploy-cfn
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image
         run: |
-          aws cloudformation deploy \
-            --template-file infra.yml \
-            --stack-name ${{ env.STACK_NAME }} \
-            --capabilities CAPABILITY_IAM \
-            --parameter-overrides KeyPairName=${{ secrets.KEY_PAIR_NAME }}
-
-      - name: Get stack outputs
-        id: get-outputs
-        run: |
-          EC2_IP=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
-            --output text)
-          EC2_DNS=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query "Stacks[0].Outputs[?OutputKey=='EC2PublicDNS'].OutputValue" \
-            --output text)
-          ECR_URI=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryURI'].OutputValue" \
-            --output text)
-          EC2_INSTANCE_ID=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
-            --output text)
-
-          echo "EC2_IP=$EC2_IP" >> $GITHUB_ENV
-          echo "EC2_DNS=$EC2_DNS" >> $GITHUB_ENV
-          echo "ECR_URI=$ECR_URI" >> $GITHUB_ENV
-          echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID" >> $GITHUB_ENV
-
-      - name: Build and push Docker image
-        run: |
-          docker build -t ${{ env.ECR_URI }}:latest ./app
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
-          docker push ${{ env.ECR_URI }}:latest
+          docker build -t ${{ env.ECR_REPOSITORY }} .
+          docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
       - name: Deploy to EC2 via SSM
         run: |
+          # Get EC2 instance ID from CloudFormation stack
+          INSTANCE_ID=$(aws cloudformation describe-stacks \
+            --stack-name your-stack-name \
+            --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
+            --output text)
+
+          # Send deployment commands via SSM
           aws ssm send-command \
-            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
+            --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
             --parameters '{
               "commands": [
-                "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
-                "docker pull ${{ env.ECR_URI }}:latest",
-                "docker stop webapp || true",
-                "docker rm webapp || true",
-                "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:latest"
+                "docker stop ${{ env.CONTAINER_NAME }} || true",
+                "docker rm ${{ env.CONTAINER_NAME }} || true",
+                "docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest",
+                "docker run -d -p 3000:3000 --restart always --name ${{ env.CONTAINER_NAME }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest"
               ]
             }' \
-            --comment "Deploying webapp container"
+            --comment "Deploying Python Flask app"
 
       - name: Verify deployment
         run: |
-          curl --retry 5 --retry-delay 10 --max-time 5 \
-            http://${{ env.EC2_IP }}:3000
+          EC2_IP=$(aws cloudformation describe-stacks \
+            --stack-name your-stack-name \
+            --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
+            --output text)
+          echo "App deployed to: http://$EC2_IP:3000"
