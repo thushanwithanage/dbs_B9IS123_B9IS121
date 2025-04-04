@@ -50,7 +50,7 @@ jobs:
         run: |
           # Get EC2 instance ID from CloudFormation stack
           INSTANCE_ID=$(aws cloudformation describe-stacks \
-            --stack-name your-stack-name \
+            --stack-name WebappStack \
             --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
             --output text)
 
