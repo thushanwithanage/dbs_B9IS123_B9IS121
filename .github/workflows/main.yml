@@ -75,10 +75,10 @@ jobs:
             --parameters '{
               "commands": [
                 "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
-                "docker pull ${{ env.ECR_URI }}:latest",  # Pull the 'latest' tag
+                "docker pull ${{ env.ECR_URI }}:latest",
                 "docker stop webapp || true",
                 "docker rm webapp || true",
-                "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:latest"  # Use the 'latest' tag
+                "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:latest"
               ]
             }' \
             --comment "Deploying webapp container with the latest tag"
