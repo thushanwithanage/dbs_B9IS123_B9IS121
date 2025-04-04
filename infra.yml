@@ -42,7 +42,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.1.0/24"
-      AvailabilityZone: !Select [0, !GetAZs ""] # Modify if required
+      AvailabilityZone: !Select [0, !GetAZs ""]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: "Name"
@@ -80,16 +80,16 @@ Resources:
         - IpProtocol: "tcp"
           FromPort: 3000
           ToPort: 3000
-          CidrIp: "0.0.0.0/0"  # Allow HTTP traffic on port 3000
+          CidrIp: "0.0.0.0/0"
         - IpProtocol: "tcp"
           FromPort: 22
           ToPort: 22
-          CidrIp: "0.0.0.0/0"  # Allow SSH access, if needed (for troubleshooting)
+          CidrIp: "0.0.0.0/0"
       Tags:
         - Key: "Name"
           Value: "WebServer-SG"
 
-  # 3. IAM Role for EC2
+  # 3. IAM Resources
   EC2Role:
     Type: "AWS::IAM::Role"
     Properties:
@@ -99,7 +99,35 @@ Resources:
           - Effect: "Allow"
             Principal:
               Service: ["ec2.amazonaws.com"]
-            Action: "sts:AssumeRole"  # Ensure there's a ':' after Action here
+            Action: "sts:AssumeRole"
+
+  EC2RolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "WebAppEC2Policy"
+      Roles:
+        - !Ref EC2Role
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ecr:GetAuthorizationToken"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ssm:GetParameters"
+              - "ssm:GetParameter"
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource: "*"
+
+  EC2InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles:
+        - !Ref EC2Role
 
   # 4. EC2 Instance
   EC2Instance:
@@ -108,8 +136,8 @@ Resources:
       InstanceType: "t2.micro"
       KeyName: !Ref KeyPairName
       ImageId: !Ref LatestAmiId
-      SecurityGroups:
-        - !Ref WebServerSecurityGroup
+      SecurityGroupIds:
+        - !GetAtt WebServerSecurityGroup.GroupId
       IamInstanceProfile: !Ref EC2InstanceProfile
       SubnetId: !Ref PublicSubnet
       Tags:
