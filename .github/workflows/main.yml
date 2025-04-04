@@ -16,9 +16,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Checkout the repository
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Step 2: Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -26,21 +28,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Ensure ECR Repository Exists
-        run: |
-          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }} || \
-          aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push Docker image
-        run: |
-          cd app && docker build -t ${{ env.ECR_REPOSITORY }} .
-          docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
-
+      # Step 6: Create CloudFormation Stack
       - name: Create CloudFormation Stack
         run: |
           aws cloudformation create-stack --stack-name ${{ env.STACK_NAME }} \
@@ -48,18 +36,42 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --region ${{ env.AWS_REGION }}
 
+      # Step 7: Wait for CloudFormation Stack to Complete
       - name: Wait for CloudFormation Stack to Complete
         run: |
           aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }}
 
+      # Step 3: Ensure ECR Repository Exists
+      - name: Ensure ECR Repository Exists
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }} || \
+          aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }} --region ${{ env.AWS_REGION }}
+
+      # Step 4: Login to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Step 5: Build, tag, and push Docker image to ECR
+      - name: Build, tag, and push Docker image
+        run: |
+          cd app && docker build -t ${{ env.ECR_REPOSITORY }} .
+          docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+
+      
+
+      # Step 8: Configure kubectl to interact with the EKS cluster
       - name: Configure kubectl
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name <your-cluster-name>
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name python-app-cluster
 
+      # Step 9: Apply Kubernetes Deployment
       - name: Apply Kubernetes Deployment
         run: |
           kubectl apply -f deployment.yml
 
+      # Step 10: Verify Deployment
       - name: Verify Deployment
         run: |
           kubectl rollout status deployment/${{ env.CONTAINER_NAME }}
