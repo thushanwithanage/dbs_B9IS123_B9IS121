@@ -9,6 +9,7 @@ env:
   AWS_REGION: "us-east-1"
   STACK_NAME: "webapp-infra"
   ECR_REPO_NAME: "webapp"
+  DOCKER_IMAGE_NAME: "webapp"
 
 jobs:
   deploy:
@@ -59,9 +60,9 @@ jobs:
           echo "ECR_URI=$ECR_URI" >> $GITHUB_ENV
           echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID" >> $GITHUB_ENV
 
-      - name: Build and push Docker image with latest tag
+      - name: Build and push Docker image
         run: |
-          docker build -t ${{ env.ECR_URI }}:latest .  
+          docker build -t ${{ env.ECR_URI }}:latest ./app-directory
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
           docker push ${{ env.ECR_URI }}:latest
 
@@ -72,14 +73,14 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --parameters '{
               "commands": [
-                "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
+                "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
                 "docker pull ${{ env.ECR_URI }}:latest",
                 "docker stop webapp || true",
                 "docker rm webapp || true",
                 "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:latest"
               ]
             }' \
-            --comment "Deploying webapp container with the latest tag"
+            --comment "Deploying webapp container"
 
       - name: Verify deployment
         run: |
