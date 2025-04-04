@@ -72,7 +72,7 @@ jobs:
       - name: Verify deployment
         run: |
           EC2_IP=$(aws cloudformation describe-stacks \
-            --stack-name your-stack-name \
+            --stack-name WebappStack \
             --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
             --output text)
           echo "App deployed to: http://$EC2_IP:3000"
