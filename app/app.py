@@ -1,9 +1,9 @@
-from flask import Flask
-app = Flask(__name__)
+from fastapi import FastAPI
 
-@app.route('/')
+app = FastAPI()
+
+@app.get("/")
 def hello():
-    return "Hello from Python Flask on EC2! v3"
+    return {"message": "Hello from Python FastAPI on EC2! v1"}
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000)
+# Note: FastAPI does not use app.run; instead, you run it with an ASGI server like uvicorn.

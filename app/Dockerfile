@@ -1,6 +1,16 @@
 FROM python:3.8-slim
+
+# Set the working directory
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY app.py .
-CMD ["python", "app.py"]
+
+# Copy the application code
+COPY . /app
+
+# Install dependencies
+RUN pip install --no-cache-dir fastapi uvicorn
+
+# Expose the application port
+EXPOSE 3000
+
+# Run the FastAPI application with uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "3000"]
