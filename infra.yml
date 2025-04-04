@@ -13,7 +13,7 @@ Parameters:
     Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 
 Resources:
-  # 1. Networking
+  # Networking
   VPC:
     Type: "AWS::EC2::VPC"
     Properties:
@@ -70,7 +70,7 @@ Resources:
       SubnetId: !Ref PublicSubnet
       RouteTableId: !Ref RouteTable
 
-  # 2. Security
+  # Security
   WebServerSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
@@ -89,7 +89,7 @@ Resources:
         - Key: "Name"
           Value: "WebServer-SG"
 
-  # 3. IAM Role for EC2
+  # IAM Role for EC2
   EC2Role:
     Type: "AWS::IAM::Role"
     Properties:
@@ -110,7 +110,7 @@ Resources:
     Properties:
       Roles: [!Ref EC2Role]
 
-  # 4. EC2 Instance
+  # EC2 Instance
   WebServer:
     Type: "AWS::EC2::Instance"
     Properties:
@@ -131,19 +131,19 @@ Resources:
           systemctl enable docker
           systemctl start docker
           usermod -aG docker ec2-user
-          until systemctl is-active --quiet docker; do
-            sleep 1
-          done
-          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_URI
-          docker pull $ECR_URI:latest  # Pull the 'latest' tag
+          # Generate host keys for SSH fingerprint (if SSM is not used to connect)
+          ssh-keygen -A > /dev/null 2>&1
+          # Pull the Docker image from ECR and run the container using 'latest' tag
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ AWS::AccountId }}.dkr.ecr.${AWS::Region}.amazonaws.com/webapp
+          docker pull ${{ AWS::AccountId }}.dkr.ecr.${AWS::Region}.amazonaws.com/webapp:latest
           docker stop webapp || true
           docker rm webapp || true
-          docker run -d -p 3000:3000 --name webapp $ECR_URI:latest  # Run the 'latest' tag
+          docker run -d -p 3000:3000 --name webapp ${{ AWS::AccountId }}.dkr.ecr.${AWS::Region}.amazonaws.com/webapp:latest
       Tags:
         - Key: "Name"
           Value: "WebServer"
 
-  # 5. ECR Repository
+  # ECR Repository
   AppRepository:
     Type: "AWS::ECR::Repository"
     Properties:

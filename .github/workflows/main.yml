@@ -59,12 +59,10 @@ jobs:
           echo "ECR_URI=$ECR_URI" >> $GITHUB_ENV
           echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID" >> $GITHUB_ENV
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image with latest tag
         run: |
-          docker build -t ${{ env.ECR_URI }}:${{ github.sha }} .
-          docker tag ${{ env.ECR_URI }}:${{ github.sha }} ${{ env.ECR_URI }}:latest
+          docker build -t ${{ env.ECR_URI }}:latest .  # Build and tag with 'latest'
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
-          docker push ${{ env.ECR_URI }}:${{ github.sha }}
           docker push ${{ env.ECR_URI }}:latest  # Push the 'latest' tag
 
       - name: Deploy to EC2 via SSM
@@ -74,8 +72,8 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --parameters '{
               "commands": [
-                "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
-                "docker pull ${{ env.ECR_URI }}:latest",
+                "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
+                "docker pull ${{ env.ECR_URI }}:latest",  # Pull only 'latest'
                 "docker stop webapp || true",
                 "docker rm webapp || true",
                 "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:latest"
