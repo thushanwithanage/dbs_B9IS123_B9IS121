@@ -5,7 +5,7 @@ Parameters:
   KeyPairName:
     Type: "AWS::EC2::KeyPair::KeyName"
     Description: "EC2 Key Pair"
-    Default: "20058324_key_pair"
+    Default: "20058324_key_pair"  # Change to your actual Key Pair name in AWS
 
   LatestAmiId:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
@@ -44,7 +44,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.1.0/24"
-      AvailabilityZone: !Select [0, !GetAZs ""]
+      AvailabilityZone: !Select [0, !GetAZs ""]  # Selecting first Availability Zone
       MapPublicIpOnLaunch: true
       Tags:
         - Key: "Name"
@@ -55,7 +55,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.2.0/24"
-      AvailabilityZone: !Select [1, !GetAZs ""] 
+      AvailabilityZone: !Select [1, !GetAZs ""]  # Selecting second Availability Zone
       MapPublicIpOnLaunch: false
       Tags:
         - Key: "Name"
