@@ -62,7 +62,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t ${{ env.ECR_URI }}:latest ./app-directory
+          docker build -t ${{ env.ECR_URI }}:latest ./app
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
           docker push ${{ env.ECR_URI }}:latest
 
