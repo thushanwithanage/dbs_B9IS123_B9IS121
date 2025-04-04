@@ -62,8 +62,10 @@ jobs:
       - name: Build and push Docker image
         run: |
           docker build -t ${{ env.ECR_URI }}:${{ github.sha }} .
+          docker tag ${{ env.ECR_URI }}:${{ github.sha }} ${{ env.ECR_URI }}:latest
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}
           docker push ${{ env.ECR_URI }}:${{ github.sha }}
+          docker push ${{ env.ECR_URI }}:latest  # Push the 'latest' tag
 
       - name: Deploy to EC2 via SSM
         run: |
@@ -73,13 +75,13 @@ jobs:
             --parameters '{
               "commands": [
                 "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_URI }}",
-                "docker pull ${{ env.ECR_URI }}:${{ github.sha }}",
+                "docker pull ${{ env.ECR_URI }}:latest",  # Pull the 'latest' tag
                 "docker stop webapp || true",
                 "docker rm webapp || true",
-                "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:${{ github.sha }}"
+                "docker run -d -p 3000:3000 --name webapp ${{ env.ECR_URI }}:latest"  # Use the 'latest' tag
               ]
             }' \
-            --comment "Deploying webapp container"
+            --comment "Deploying webapp container with the latest tag"
 
       - name: Verify deployment
         run: |
