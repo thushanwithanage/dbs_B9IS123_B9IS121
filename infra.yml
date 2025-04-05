@@ -174,3 +174,7 @@ Outputs:
   ECRRepositoryURI:
     Value: !GetAtt ECRRepository.RepositoryUri
     Description: "ECR URI to push Docker images"
+  
+  EC2InstanceId:
+    Value: !Ref EC2Instance
+    Description: "EC2 Instance ID"
