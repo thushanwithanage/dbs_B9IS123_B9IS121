@@ -3,8 +3,8 @@ FROM python:3.8-slim
 # Set the working directory
 WORKDIR /app
 
-# Copy the application code
-COPY . /app
+# Copy the application code from the app folder into the Docker container
+COPY ./app /app
 
 # Install dependencies
 RUN pip install --no-cache-dir fastapi uvicorn
