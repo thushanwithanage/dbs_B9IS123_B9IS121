@@ -8,6 +8,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: python-webapp
   CONTAINER_NAME: python-app
+  STACK_NAME: PythonAppStack  # Added stack name variable
 
 jobs:
   deploy:
@@ -23,6 +24,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # 1. CREATE CLOUDFORMATION STACK (Added back)
+      - name: Create/Update CloudFormation stack
+        run: |
+          # Check if stack exists
+          if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} >/dev/null 2>&1; then
+            echo "Updating existing stack"
+            aws cloudformation update-stack \
+              --template-body file://infra.yml \
+              --stack-name ${{ env.STACK_NAME }} \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --parameters ParameterKey=KeyPairName,UsePreviousValue=true
+          else
+            echo "Creating new stack"
+            aws cloudformation create-stack \
+              --template-body file://infra.yml \
+              --stack-name ${{ env.STACK_NAME }} \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --parameters ParameterKey=KeyPairName,ParameterValue=${{ secrets.KEY_PAIR_NAME }}
+          fi
+          
+          # Wait for completion
+          aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }} || \
+          aws cloudformation wait stack-update-complete --stack-name ${{ env.STACK_NAME }}
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -33,34 +58,23 @@ jobs:
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-      - name: Deploy infrastructure
-        run: |
-          aws cloudformation deploy \
-            --template-file infra.yml \
-            --stack-name PythonAppStack \
-            --capabilities CAPABILITY_NAMED_IAM
-          echo "Infrastructure deployed successfully"
-
-      - name: Wait for instance to be ready
+      - name: Wait for SSM readiness
         run: |
           INSTANCE_ID=$(aws cloudformation describe-stacks \
-            --stack-name PythonAppStack \
+            --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
             --output text)
           
-          # Wait for SSM agent to come online
-          echo "Waiting for SSM agent to be ready..."
+          echo "Waiting for SSM agent on instance $INSTANCE_ID..."
           aws ssm wait command-executed \
             --instance-id $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --query "Command.Status" \
-            --output text \
-            --parameters 'commands=["echo SSM ready"]'
+            --parameters 'commands=["echo Ready"]'
 
-      - name: Deploy Docker container
+      - name: Deploy container via SSM
         run: |
           INSTANCE_ID=$(aws cloudformation describe-stacks \
-            --stack-name PythonAppStack \
+            --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
             --output text)
           
@@ -76,13 +90,12 @@ jobs:
                 "docker run -d -p 3000:3000 --restart always --name ${{ env.CONTAINER_NAME }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest"
               ]
             }'
-          
-          echo "Container deployed successfully"
 
       - name: Verify deployment
         run: |
           PUBLIC_IP=$(aws cloudformation describe-stacks \
-            --stack-name PythonAppStack \
+            --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
             --output text)
           echo "Application deployed at: http://$PUBLIC_IP:3000"
+          curl -s http://$PUBLIC_IP:3000 | grep -q "Welcome" && echo "App is responding!" || echo "App check failed"
