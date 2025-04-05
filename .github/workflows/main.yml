@@ -24,14 +24,25 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Create CloudFormation stack
+      - name: Create or Update CloudFormation stack
         run: |
-          aws cloudformation create-stack \
-            --template-body file://infra.yml \
-            --stack-name ${{ env.STACK_NAME }} \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameters ParameterKey=KeyPairName,ParameterValue=${{ secrets.KEY_PAIR_NAME }}
-          
+          if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} >/dev/null 2>&1; then
+            echo "Stack exists. Updating stack..."
+            aws cloudformation update-stack \
+              --template-body file://infra.yml \
+              --stack-name ${{ env.STACK_NAME }} \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --parameters ParameterKey=KeyPairName,ParameterValue=${{ secrets.KEY_PAIR_NAME }} || \
+              echo "No updates to be performed."
+          else
+            echo "Stack does not exist. Creating stack..."
+            aws cloudformation create-stack \
+              --template-body file://infra.yml \
+              --stack-name ${{ env.STACK_NAME }} \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --parameters ParameterKey=KeyPairName,ParameterValue=${{ secrets.KEY_PAIR_NAME }}
+          fi
+
           aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }}
 
       - name: Login to Amazon ECR
