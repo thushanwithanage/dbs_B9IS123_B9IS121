@@ -51,6 +51,7 @@ jobs:
       - name: Deploy to EC2 via SSM
         run: |
           # Get EC2 instance ID from CloudFormation stack
+          set -e
           INSTANCE_ID=$(aws cloudformation describe-stacks \
             --stack-name WebappStack \
             --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
