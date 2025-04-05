@@ -8,7 +8,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: python-webapp
   CONTAINER_NAME: python-app
-  STACK_NAME: PythonAppStack  # Added stack name variable
+  STACK_NAME: PythonAppStack
 
 jobs:
   deploy:
@@ -24,55 +24,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 1. CREATE CLOUDFORMATION STACK (Added back)
-      - name: Create/Update CloudFormation stack
+      - name: Create CloudFormation stack
         run: |
-          # Check if stack exists
-          if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} >/dev/null 2>&1; then
-            echo "Updating existing stack"
-            aws cloudformation update-stack \
-              --template-body file://infra.yml \
-              --stack-name ${{ env.STACK_NAME }} \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --parameters ParameterKey=KeyPairName,UsePreviousValue=true
-          else
-            echo "Creating new stack"
-            aws cloudformation create-stack \
-              --template-body file://infra.yml \
-              --stack-name ${{ env.STACK_NAME }} \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --parameters ParameterKey=KeyPairName,ParameterValue=${{ secrets.KEY_PAIR_NAME }}
-          fi
+          aws cloudformation create-stack \
+            --template-body file://infra.yml \
+            --stack-name ${{ env.STACK_NAME }} \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameters ParameterKey=KeyPairName,ParameterValue=${{ secrets.KEY_PAIR_NAME }}
           
-          # Wait for completion
-          aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }} || \
-          aws cloudformation wait stack-update-complete --stack-name ${{ env.STACK_NAME }}
+          aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }}
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push Docker image
         run: |
-          cd app
           docker build -t ${{ env.ECR_REPOSITORY }} .
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-      - name: Wait for SSM readiness
-        run: |
-          INSTANCE_ID=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
-            --output text)
-          
-          echo "Waiting for SSM agent on instance $INSTANCE_ID..."
-          aws ssm wait command-executed \
-            --instance-id $INSTANCE_ID \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["echo Ready"]'
-
-      - name: Deploy container via SSM
+      - name: Deploy to EC2 instance
         run: |
           INSTANCE_ID=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.STACK_NAME }} \
@@ -99,4 +70,3 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
             --output text)
           echo "Application deployed at: http://$PUBLIC_IP:3000"
-          curl -s http://$PUBLIC_IP:3000 | grep -q "Welcome" && echo "App is responding!" || echo "App check failed"
