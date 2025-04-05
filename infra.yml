@@ -115,8 +115,11 @@ Resources:
               - "logs:CreateLogStream"
               - "logs:PutLogEvents"
               - "ssm:SendCommand"
+              - "ssm:ListCommands"
               - "ssm:ListCommandInvocations"
               - "ssm:GetCommandInvocation"
+              - "ec2messages:*"
+              - "ssmmessages:*"
             Resource: "*"
 
   EC2InstanceProfile:
