@@ -5,7 +5,7 @@ app = FastAPI()
 
 @app.get("/")
 def hello():
-    return {"message": "Hello from Python FastAPI on EC2 v4"}
+    return {"message": "Hello from Python FastAPI on EC2 v1"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=3000)
