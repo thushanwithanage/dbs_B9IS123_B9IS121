@@ -51,7 +51,7 @@ jobs:
       - name: Deploy to EC2 via SSM
         run: |
           # Get EC2 instance ID from CloudFormation stack
-          INSTANCE_ID=i-02338a56628217e83
+          INSTANCE_ID="i-02338a56628217e83"
 
           # Send deployment commands
           aws ssm send-command \
