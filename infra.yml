@@ -101,7 +101,7 @@ Resources:
       ImageScanningConfiguration:
         scanOnPush: true
 
-  # 5. EC2 Instance (basic setup without UserData configuration)
+  # 5. EC2 Instance
   EC2Instance:
     Type: "AWS::EC2::Instance"
     Properties:
