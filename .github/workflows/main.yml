@@ -5,7 +5,6 @@ on:
     branches: [ main ]
 
 env:
-  AWS_REGION: us-east-1
   ECR_REPOSITORY: python-webapp
   CONTAINER_NAME: python-app
   STACK_NAME: PythonAppStack
@@ -23,7 +22,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       # Part 1: Infrastructure Setup
       - name: Deploy Infrastructure Stack
@@ -35,7 +34,7 @@ jobs:
               --stack-name ${{ env.STACK_NAME }} \
               --capabilities CAPABILITY_NAMED_IAM \
               --parameters ParameterKey=KeyPairName,ParameterValue=${{ secrets.KEY_PAIR_NAME }} || \
-              echo "No updates to be performed."
+              echo "No updates"
           else
             echo "Stack does not exist. Creating stack..."
             aws cloudformation create-stack \
@@ -73,8 +72,8 @@ jobs:
         run: |
           cd ./app
           docker build -t ${{ env.ECR_REPOSITORY }} .
-          docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+          docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
       - name: Deploy to EC2 instance
         run: |
@@ -83,11 +82,11 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --parameters '{
               "commands": [
-                "aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com",
-                "docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest",
+                "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com",
+                "docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest",
                 "docker stop ${{ env.CONTAINER_NAME }} || true",
                 "docker rm ${{ env.CONTAINER_NAME }} || true",
-                "docker run -d -p 3000:3000 --restart always --name ${{ env.CONTAINER_NAME }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest"
+                "docker run -d -p 3000:3000 --restart always --name ${{ env.CONTAINER_NAME }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest"
               ]
             }'
 
