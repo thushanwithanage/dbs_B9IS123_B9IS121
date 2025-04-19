@@ -77,6 +77,9 @@ jobs:
 
       - name: Deploy to EC2 instance
         run: |
+          # Wait for the EC2 instance to be in a running state
+          aws ec2 wait instance-running --instance-ids ${{ steps.get-instance-id.outputs.instance_id }}
+          
           aws ssm send-command \
             --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
             --document-name "AWS-RunShellScript" \
