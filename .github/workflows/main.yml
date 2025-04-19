@@ -64,6 +64,26 @@ jobs:
             --parameter-overrides EC2InstanceId=${{ steps.get-instance-id.outputs.instance_id }} \
             --capabilities CAPABILITY_NAMED_IAM
 
+      - name: Wait for SSM Agent to be Online
+        run: |
+          echo "Waiting for SSM agent to be ready..."
+          TIMEOUT=300 # Wait up to 5 minutes
+          ELAPSED=0
+          while true; do
+            STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=${{ steps.get-instance-id.outputs.instance_id }}" --query 'InstanceInformationList[0].PingStatus' --output text)
+            if [ "$STATUS" == "Online" ]; then
+              echo "SSM agent is online."
+              break
+            fi
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "Error: Timeout waiting for SSM agent."
+              exit 1
+            fi
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+            echo "Waiting for SSM to come online... (Elapsed: $ELAPSED / $TIMEOUT seconds)"
+          done
+
       # Application Deployment
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -77,18 +97,6 @@ jobs:
 
       - name: Deploy to EC2 instance
         run: |
-          # Wait for the EC2 instance to be in a running state
-          echo "Waiting for EC2 instance to be running..."
-          aws ec2 wait instance-running --instance-ids ${{ steps.get-instance-id.outputs.instance_id }}
-          
-          # Wait for SSM to be ready
-          echo "Waiting for SSM agent to be ready..."
-          until aws ssm describe-instance-information --filters "Key=InstanceIds,Values=${{ steps.get-instance-id.outputs.instance_id }}" --query 'InstanceInformationList[0].PingStatus' --output text | grep -q "Online"; do
-            sleep 10
-            echo "Waiting for SSM to come online..."
-          done
-          
-          # Deploy the application
           echo "Deploying application..."
           aws ssm send-command \
             --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
@@ -100,6 +108,7 @@ jobs:
                 "docker run -d -p 3000:3000 --restart always --name ${{ env.CONTAINER_NAME }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest"
               ]
             }'
+          aws ssm wait command-executed --command-id "$(aws ssm list-commands --instance-id ${{ steps.get-instance-id.outputs.instance_id }} --query 'Commands[0].CommandId' --output text)" --instance-id ${{ steps.get-instance-id.outputs.instance_id }}
 
       - name: Verify deployment
         run: |
@@ -107,7 +116,7 @@ jobs:
             --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
             --output text)
-          
+
           echo "Verifying application is running at: http://$PUBLIC_IP:3000"
           for i in {1..10}; do
             if curl -s --connect-timeout 5 "http://$PUBLIC_IP:3000" >/dev/null; then
