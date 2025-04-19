@@ -1,3 +1,5 @@
+infra.yml
+
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Python Flask app on EC2 with automated Docker deployments"
 
@@ -120,6 +122,11 @@ Resources:
           systemctl start docker
           systemctl enable docker
           usermod -aG docker ec2-user
+          
+          # Install AWS CLI
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
           
           # Install SSM Agent
           yum install -y amazon-ssm-agent
