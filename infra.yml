@@ -1,5 +1,3 @@
-infra.yml
-
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Python Flask app on EC2 with automated Docker deployments"
 
