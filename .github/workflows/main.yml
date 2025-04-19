@@ -71,7 +71,7 @@ jobs:
       - name: Build and push Docker image
         run: |
           cd ./app
-          docker build -t ${{ env.ECR_REPOSITORY }} .
+          docker build -t ${{ env.ECR_REPOSITORY }} -f ./Dockerfile .
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
