@@ -88,15 +88,6 @@ jobs:
             echo "Waiting for SSM to come online..."
           done
           
-          # Verify Docker is installed
-          echo "Verifying Docker installation..."
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
-            --document-name "AWS-RunShellScript" \
-            --parameters '{"commands": ["docker --version"]}' \
-            --query "Command.CommandId" \
-            --output text)
-          
           aws ssm wait command-executed \
             --instance-id ${{ steps.get-instance-id.outputs.instance_id }} \
             --command-id $COMMAND_ID
