@@ -81,26 +81,24 @@ jobs:
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-      # Step 7: Configure EC2 instance using Ansible
-      - name: Configure EC2 Instance using Ansible
-        uses: aws-actions/amazon-ec2-instance-connect@v2
-        with:
-          instance-id: ${{ env.EC2_INSTANCE_ID }}
-          region: ${{ env.AWS_REGION }}
+      # Step 7: Install Ansible
+      - name: Install Ansible on GitHub runner
         run: |
-          # Install Ansible on the GitHub runner
           sudo apt-get update
           sudo apt-get install -y python3-pip
           sudo pip3 install ansible
 
-          # Copy the setup-server.yml playbook to the runner
-          echo "${{ secrets.ANSIBLE_PRIVATE_KEY }}" > ansible_private_key.pem
+      # Step 8: Configure EC2 Instance using Ansible
+      - name: Configure EC2 Instance using Ansible
+        run: |
+          # Create the private key file from the GitHub secret
+          echo "${{ secrets.ANSIBLE_PRIVATE_KEY }}" | base64 --decode > ansible_private_key.pem
           chmod 600 ansible_private_key.pem
 
           # Run the Ansible playbook to configure the EC2 instance
-          ansible-playbook -i "ec2-${{ env.EC2_PUBLIC_IP }}," --private-key ansible_private_key.pem setup_server.yml
+          ansible-playbook -i "ec2-${{ env.EC2_PUBLIC_IP }}," --private-key ansible_private_key.pem setup-server.yml
 
-      # Step 8: Deploy to EC2 instance
+      # Step 9: Deploy to EC2 instance
       - name: Deploy to EC2 instance
         run: |
           aws ssm send-command \
@@ -116,7 +114,7 @@ jobs:
               ]
             }'
 
-      # Step 9: Verify deployment
+      # Step 10: Verify deployment
       - name: Verify deployment
         run: |
           echo "Application deployed at: http://${{ env.EC2_PUBLIC_IP }}:3000"
