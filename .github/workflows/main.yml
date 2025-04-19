@@ -78,15 +78,39 @@ jobs:
       - name: Deploy to EC2 instance
         run: |
           # Wait for the EC2 instance to be in a running state
+          echo "Waiting for EC2 instance to be running..."
           aws ec2 wait instance-running --instance-ids ${{ steps.get-instance-id.outputs.instance_id }}
-          aws ssm wait instance-online --instance-id ${{ steps.get-instance-id.outputs.instance_id }}
-
+          
+          # Wait for SSM to be ready
+          echo "Waiting for SSM agent to be ready..."
+          until aws ssm describe-instance-information --filters "Key=InstanceIds,Values=${{ steps.get-instance-id.outputs.instance_id }}" --query 'InstanceInformationList[0].PingStatus' --output text | grep -q "Online"; do
+            sleep 10
+            echo "Waiting for SSM to come online..."
+          done
+          
+          # Verify Docker is installed
+          echo "Verifying Docker installation..."
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters '{"commands": ["docker --version"]}' \
+            --query "Command.CommandId" \
+            --output text)
+          
+          aws ssm wait command-executed \
+            --instance-id ${{ steps.get-instance-id.outputs.instance_id }} \
+            --command-id $COMMAND_ID
+          
+          # Deploy the application
+          echo "Deploying application..."
           aws ssm send-command \
             --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
             --document-name "AWS-RunShellScript" \
             --parameters '{
               "commands": [
                 "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com",
+                "docker stop ${{ env.CONTAINER_NAME }} || true",
+                "docker rm ${{ env.CONTAINER_NAME }} || true",
                 "docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest",
                 "docker run -d -p 3000:3000 --restart always --name ${{ env.CONTAINER_NAME }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest"
               ]
@@ -98,4 +122,15 @@ jobs:
             --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
             --output text)
-          echo "Application deployed at: http://$PUBLIC_IP:3000"
+          
+          echo "Verifying application is running at: http://$PUBLIC_IP:3000"
+          for i in {1..10}; do
+            if curl -s --connect-timeout 5 "http://$PUBLIC_IP:3000" >/dev/null; then
+              echo "Application is running successfully!"
+              exit 0
+            fi
+            sleep 10
+            echo "Attempt $i: Application not responding"
+          done
+          echo "Error: Application failed to start"
+          exit 1
