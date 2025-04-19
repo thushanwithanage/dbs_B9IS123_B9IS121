@@ -88,10 +88,6 @@ jobs:
             echo "Waiting for SSM to come online..."
           done
           
-          aws ssm wait command-executed \
-            --instance-id ${{ steps.get-instance-id.outputs.instance_id }} \
-            --command-id $COMMAND_ID
-          
           # Deploy the application
           echo "Deploying application..."
           aws ssm send-command \
