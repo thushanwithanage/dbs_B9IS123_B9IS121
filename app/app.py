@@ -5,7 +5,7 @@ app = FastAPI()
 
 @app.get("/")
 def hello():
-    return {"data": "Thushan Withanage v1.0"}
+    return {"data": "v1.0"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=3000)
