@@ -67,32 +67,26 @@ jobs:
 
       - name: Wait for Docker to be ready
         run: |
-          echo "Waiting for Docker installation via config.yml to complete.."
+          echo "⌛ Waiting for Docker installation..."
           
-          # First wait for SSM agent to be ready
-          echo "Checking SSM agent status"
+          # Wait for SSM agent
           until aws ssm describe-instance-information \
             --filters "Key=InstanceIds,Values=${{ steps.get-instance-id.outputs.instance_id }}" \
             --query 'InstanceInformationList[0].PingStatus' \
             --output text | grep -q "Online"; do
             sleep 10
-            echo "SSM agent not ready yet"
+            echo "Waiting for SSM agent..."
           done
-          echo "SSM agent is online"
 
-          # Verify Docker installation from config.yml
-          echo "Verifying Docker installation..."
+          # Verify Docker
           RETRY_COUNT=0
           while [ $RETRY_COUNT -lt ${{ env.MAX_RETRIES }} ]; do
-            echo "Attempt $((RETRY_COUNT+1)) of ${{ env.MAX_RETRIES }}"
-            
-            # Check if Docker is installed and running
             COMMAND_ID=$(aws ssm send-command \
               --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
               --document-name "AWS-RunShellScript" \
               --parameters '{"commands": [
-                "if command -v docker >/dev/null 2>&1 && systemctl is-active docker >/dev/null 2>&1; then",
-                "  echo \"DOCKER_READY\"",
+                "if command -v docker >/dev/null && systemctl is-active docker >/dev/null; then",
+                "  echo \"READY\"",
                 "  exit 0",
                 "else",
                 "  exit 1",
@@ -101,31 +95,19 @@ jobs:
               --query "Command.CommandId" \
               --output text)
             
-            # Wait for command to complete
             if aws ssm wait command-executed \
               --command-id $COMMAND_ID \
               --instance-id ${{ steps.get-instance-id.outputs.instance_id }}; then
-              
-              # Check command output
-              OUTPUT=$(aws ssm get-command-invocation \
-                --command-id $COMMAND_ID \
-                --instance-id ${{ steps.get-instance-id.outputs.instance_id }} \
-                --query "StandardOutputContent" \
-                --output text)
-              
-              if [[ $OUTPUT == *"DOCKER_READY"* ]]; then
-                echo "Docker is ready"
-                break
-              fi
+              echo "✅ Docker is ready"
+              break
             fi
             
             RETRY_COUNT=$((RETRY_COUNT+1))
-            echo "Docker not ready yet. Waiting ${{ env.RETRY_DELAY }} seconds..."
             sleep ${{ env.RETRY_DELAY }}
           done
 
           if [ $RETRY_COUNT -eq ${{ env.MAX_RETRIES }} ]; then
-            echo "Error: Docker did not become ready after ${{ env.MAX_RETRIES }} attempts"
+            echo "❌ Docker installation failed"
             exit 1
           fi
 
@@ -135,16 +117,15 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          echo "Building and pushing Docker image..."
           cd ./app
           docker build -t ${{ env.ECR_REPOSITORY }} .
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-      - name: Deploy to EC2 instance
+      - name: Deploy container to EC2
         run: |
-          echo "Deploying application"
-          aws ssm send-command \
+          echo "🚀 Starting deployment..."
+          DEPLOY_COMMAND_ID=$(aws ssm send-command \
             --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
             --document-name "AWS-RunShellScript" \
             --parameters '{
@@ -155,25 +136,61 @@ jobs:
                 "sudo docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest",
                 "sudo docker run -d -p 3000:3000 --restart always --name ${{ env.CONTAINER_NAME }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest"
               ]
-            }'
-          echo "Waiting 30 seconds for container to initialize..."
-          sleep 30
+            }' \
+            --query "Command.CommandId" \
+            --output text)
+          
+          aws ssm wait command-executed \
+            --command-id $DEPLOY_COMMAND_ID \
+            --instance-id ${{ steps.get-instance-id.outputs.instance_id }}
 
-      - name: Verify deployment
+      - name: Verify container status
+        run: |
+          echo "🔍 Checking container health..."
+          RETRY_COUNT=0
+          CONTAINER_RETRIES=10
+          CONTAINER_DELAY=10
+          
+          while [ $RETRY_COUNT -lt $CONTAINER_RETRIES ]; do
+            CONTAINER_STATUS=$(aws ssm send-command \
+              --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
+              --document-name "AWS-RunShellScript" \
+              --parameters '{"commands": [
+                "sudo docker inspect --format=\"{{.State.Running}}\" ${{ env.CONTAINER_NAME }} 2>/dev/null || echo \"false\""
+              ]}' \
+              --query "CommandInvocations[0].CommandPlugins[0].Output" \
+              --output text | tr -d '\n')
+            
+            if [[ $CONTAINER_STATUS == "true" ]]; then
+              echo "✅ Container is running"
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT+1))
+            echo "Container not ready (attempt $RETRY_COUNT/$CONTAINER_RETRIES)..."
+            sleep $CONTAINER_DELAY
+          done
+          
+          if [ $RETRY_COUNT -eq $CONTAINER_RETRIES ]; then
+            echo "❌ Error: Container failed to start"
+            exit 1
+          fi
+
+      - name: Verify application endpoint
         run: |
           PUBLIC_IP=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
             --output text)
           
-          echo "Verifying application at http://$PUBLIC_IP:3000"
+          echo "🌐 Testing application at http://$PUBLIC_IP:3000"
           for i in {1..10}; do
             if curl -s --connect-timeout 5 "http://$PUBLIC_IP:3000" >/dev/null; then
-              echo "Application is running!"
+              echo "🎉 Application is responding!"
               exit 0
             fi
             sleep 10
             echo "Attempt $i: Application not responding yet..."
           done
-          echo "Error: Application failed to start"
+          echo "❌ Error: Application failed to respond"
           exit 1
