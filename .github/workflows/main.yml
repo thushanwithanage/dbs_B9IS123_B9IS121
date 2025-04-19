@@ -9,18 +9,15 @@ env:
   ECR_REPOSITORY: python-webapp
   CONTAINER_NAME: python-app
   STACK_NAME: PythonAppStack
-  EC2_PUBLIC_IP: ""
-  EC2_INSTANCE_ID: ""
+  CONFIG_STACK_NAME: PythonAppConfigStack
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -28,8 +25,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Step 3: Create or Update CloudFormation stack to provision infrastructure
-      - name: Create or Update CloudFormation stack
+      # Part 1: Infrastructure Setup
+      - name: Deploy Infrastructure Stack
         run: |
           if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} >/dev/null 2>&1; then
             echo "Stack exists. Updating stack..."
@@ -50,59 +47,38 @@ jobs:
 
           aws cloudformation wait stack-create-complete --stack-name ${{ env.STACK_NAME }}
 
-      # Step 4: Get EC2 Instance ID and Public IP from CloudFormation stack outputs
-      - name: Get EC2 Instance ID and Public IP
-        id: instance
+      - name: Get EC2 Instance ID
+        id: get-instance-id
         run: |
-          EC2_INSTANCE_ID=$(aws cloudformation describe-stacks \
+          INSTANCE_ID=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.STACK_NAME }} \
             --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" \
             --output text)
-          
-          EC2_PUBLIC_IP=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
-            --output text)
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
 
-          echo "EC2 Instance ID: $EC2_INSTANCE_ID"
-          echo "EC2 Public IP: $EC2_PUBLIC_IP"
-          
-          echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID" >> $GITHUB_ENV
-          echo "EC2_PUBLIC_IP=$EC2_PUBLIC_IP" >> $GITHUB_ENV
+      # Part 2: Configuration Management
+      - name: Deploy Configuration Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file configure.yml \
+            --stack-name ${{ env.CONFIG_STACK_NAME }} \
+            --parameter-overrides EC2InstanceId=${{ steps.get-instance-id.outputs.instance_id }} \
+            --capabilities CAPABILITY_NAMED_IAM
 
-      # Step 5: Login to Amazon ECR
+      # Application Deployment
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Step 6: Build and push Docker image to ECR
       - name: Build and push Docker image
         run: |
           docker build -t ${{ env.ECR_REPOSITORY }} ./app
           docker tag ${{ env.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-      # Step 7: Install Ansible
-      - name: Install Ansible on GitHub runner
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          sudo pip3 install ansible
-
-      # Step 8: Configure EC2 Instance using Ansible
-      - name: Configure EC2 Instance using Ansible
-        run: |
-          # Create the private key file from the GitHub secret
-          echo "${{ secrets.ANSIBLE_PRIVATE_KEY }}" | base64 --decode > ansible_private_key.pem
-          chmod 600 ansible_private_key.pem
-
-          # Run the Ansible playbook to configure the EC2 instance
-          ansible-playbook -i "ec2-${{ env.EC2_PUBLIC_IP }}," --private-key ansible_private_key.pem setup-server.yml
-
-      # Step 9: Deploy to EC2 instance
       - name: Deploy to EC2 instance
         run: |
           aws ssm send-command \
-            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
+            --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
             --document-name "AWS-RunShellScript" \
             --parameters '{
               "commands": [
@@ -114,7 +90,10 @@ jobs:
               ]
             }'
 
-      # Step 10: Verify deployment
       - name: Verify deployment
         run: |
-          echo "Application deployed at: http://${{ env.EC2_PUBLIC_IP }}:3000"
+          PUBLIC_IP=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" \
+            --output text)
+          echo "Application deployed at: http://$PUBLIC_IP:3000"

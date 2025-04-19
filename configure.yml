@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Python Flask app - Part 2: Configuration Management"
+
+Parameters:
+  EC2InstanceId:
+    Type: "String"
+    Description: "Instance ID to configure"
+
+Resources:
+  ConfigureServer:
+    Type: "AWS::SSM::Document"
+    Properties:
+      DocumentType: "Command"
+      Content:
+        schemaVersion: "2.2"
+        description: "Configure EC2 instance with Docker and dependencies"
+        parameters: {}
+        mainSteps:
+          - action: "aws:runShellScript"
+            name: "InstallDockerAndDependencies"
+            inputs:
+              runCommand:
+                - "#!/bin/bash"
+                - "# Install Docker"
+                - "yum update -y"
+                - "amazon-linux-extras install docker -y"
+                - "systemctl start docker"
+                - "systemctl enable docker"
+                - "usermod -aG docker ec2-user"
+                - ""
+                - "# Install AWS CLI"
+                - "curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"awscliv2.zip\""
+                - "unzip awscliv2.zip"
+                - "./aws/install"
+                - ""
+                - "# Install SSM Agent"
+                - "yum install -y amazon-ssm-agent"
+                - "systemctl start amazon-ssm-agent"
+                - "systemctl enable amazon-ssm-agent"
+
+  RunConfiguration:
+    Type: "AWS::SSM::Association"
+    Properties:
+      Name: !Ref ConfigureServer
+      Targets:
+        - Key: "InstanceIds"
+          Values: [!Ref EC2InstanceId]
