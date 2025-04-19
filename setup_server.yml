@@ -1,0 +1,43 @@
+---
+- name: Configure EC2 Instance for Docker Deployment
+  hosts: all
+  become: true
+  tasks:
+    - name: Install Docker
+      yum:
+        name: docker
+        state: present
+
+    - name: Ensure Docker is started and enabled
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add ec2-user to the docker group
+      user:
+        name: ec2-user
+        group: docker
+        append: yes
+
+    - name: Install AWS CLI
+      command: "curl https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o awscliv2.zip"
+      args:
+        creates: /usr/local/bin/aws
+
+    - name: Unzip and Install AWS CLI
+      unarchive:
+        src: awscliv2.zip
+        dest: /tmp
+        remote_src: yes
+
+    - name: Install SSM Agent
+      yum:
+        name: amazon-ssm-agent
+        state: present
+
+    - name: Ensure SSM Agent is started and enabled
+      service:
+        name: amazon-ssm-agent
+        state: started
+        enabled: true
