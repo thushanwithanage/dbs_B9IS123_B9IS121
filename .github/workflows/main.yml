@@ -143,38 +143,9 @@ jobs:
           aws ssm wait command-executed \
             --command-id $DEPLOY_COMMAND_ID \
             --instance-id ${{ steps.get-instance-id.outputs.instance_id }}
+          
+          sleep 30
 
-      - name: Verify container status
-        run: |
-          echo "🔍 Checking container health..."
-          RETRY_COUNT=0
-          CONTAINER_RETRIES=10
-          CONTAINER_DELAY=10
-          
-          while [ $RETRY_COUNT -lt $CONTAINER_RETRIES ]; do
-            CONTAINER_STATUS=$(aws ssm send-command \
-              --instance-ids ${{ steps.get-instance-id.outputs.instance_id }} \
-              --document-name "AWS-RunShellScript" \
-              --parameters '{"commands": [
-                "sudo docker inspect --format=\"{{.State.Running}}\" ${{ env.CONTAINER_NAME }} 2>/dev/null || echo \"false\""
-              ]}' \
-              --query "CommandInvocations[0].CommandPlugins[0].Output" \
-              --output text | tr -d '\n')
-            
-            if [[ $CONTAINER_STATUS == "true" ]]; then
-              echo "✅ Container is running"
-              break
-            fi
-            
-            RETRY_COUNT=$((RETRY_COUNT+1))
-            echo "Container not ready (attempt $RETRY_COUNT/$CONTAINER_RETRIES)..."
-            sleep $CONTAINER_DELAY
-          done
-          
-          if [ $RETRY_COUNT -eq $CONTAINER_RETRIES ]; then
-            echo "❌ Error: Container failed to start"
-            exit 1
-          fi
 
       - name: Verify application endpoint
         run: |
